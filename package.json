@@ -1,0 +1,44 @@
+{
+  "name": "dsh-clock",
+  "version": "0.1.0",
+  "description": "给 DSH 加一只时钟：记录本轮对话从 turn/start 起已经运行多久，并通过 clock_elapsed 工具让模型随时读到。",
+  "type": "module",
+  "main": "lib/index.js",
+  "license": "MIT",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "clock",
+    "timer",
+    "elapsed"
+  ],
+  "exports": {
+    ".": "./lib/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "src",
+    "cordis.patch.yml",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "scripts": {
+    "test": "node --test \"tests/*.test.mjs\" \"tests/*.mjs\""
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": ">=4.0.2 <5"
+  },
+  "dependencies": {
+    "zod": "^3.25.76"
+  },
+  "engines": {
+    "node": ">=20",
+    "dsh": ">=0.2.0-rc.1 <1.0.0"
+  }
+}

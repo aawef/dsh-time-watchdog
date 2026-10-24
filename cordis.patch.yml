@@ -1,0 +1,4 @@
+# dsh-clock bundle patch: register the clock host plugin.
+- insert:
+    - id: dsh-clock
+      name: dsh-clock
