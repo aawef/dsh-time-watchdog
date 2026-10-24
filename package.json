@@ -1,6 +1,6 @@
 {
   "name": "dsh-clock",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "给 DSH 加一只时钟：记录本轮对话从 turn/start 起已经运行多久，并通过 clock_elapsed 工具让模型随时读到、通过提醒卡片让人看见。",
   "type": "module",
   "main": "lib/index.js",

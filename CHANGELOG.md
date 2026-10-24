@@ -1,5 +1,22 @@
 # CHANGELOG
 
+## 0.2.1 — 2026-10-24
+
+真机上暴露的两个接线缺陷，都不影响离线测试（26 条测试全绿却仍然不可用）。
+
+- 修：`/clock 30` 这类带参数的命令完全无效，会被当成普通聊天消息发给模型。
+  根因在客户端 `dsh-client-ui-commands` 的 `matchEnter`：命令描述符没有 `input`
+  时，带空格的写法直接 `return void 0`（不认领），只有声明了 `input.hint`
+  才走 `leadingClaim` 把参数当 `rawInput` 传下来。给 `/clock` 补上
+  `input: { hint: "秒数或 off，例如 30、2m、off" }`。
+- 修：`GET /dsh-clock/api/config` 一直 404，浏览器端拿不到 t，卡片永不弹。
+  根因是 `ctx.get("webServer")` 的 cordis 语义：`get()` 默认 `strict = true`，
+  只返回「提供方 fiber 已 active」的服务，而 `dsh-host-webserver` 的
+  `[Service.init]` 是 async（等 socket bind），插件加载时它还没就绪 → 读到
+  `undefined` → 早退 → 路由从未注册。改用 `ctx.inject(["webServer"], …)`，
+  依赖就绪后再注册；工具/命令/投影仍在 `apply()` 里同步先起，不被拖慢。
+- 顺带：该端点现在 GET 与 POST 都放行，避免不同客户端方法不匹配变成 405。
+
 ## 0.2.0 — 2026-10-24
 
 新增「提醒卡片」（toast）与配置入口，用于测试计时链路。
