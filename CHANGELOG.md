@@ -17,8 +17,12 @@
   浏览器端 `useProjection("clock")` 永远读到 `undefined`，卡片无从计时。
 - `inject` 收窄为 `["tools", "sessionProjections", "commands"]`：`webServer` 改成运行时
   `ctx.get()` 探测，它在 CLI / 无 UI 组合里缺席时插件本体依然可用。
-- 测试增至 21 条：`tests/clock.test.mjs` 覆盖折叠与读数，`tests/client.test.mjs` 覆盖
-  `formatDuration` / `stepToast` / `isToastVisible`（在 vm 沙箱里求值 client.js，不碰 DOM）。
+- 测试增至 26 条：`tests/clock.test.mjs` 覆盖折叠与读数，`tests/client.test.mjs` 覆盖
+  `formatDuration` / `stepToast` / `isToastVisible`（在 vm 沙箱里求值 client.js，不碰 DOM），
+  `tests/client.render.test.mjs` 用迷你 React 把卡片真渲染成 HTML，验证「到点弹 / 间隔未到不弹 /
+  off 不弹 / 5 秒撤 / 换轮重置」。
+- 修：本轮 `turn/end` 时停表会连带停掉本地 tick，若卡片正挂在屏幕上就再也不会消失。
+  改为「本轮在跑 **或** 卡片还挂着」都继续 tick。
 
 ## 0.1.0 — 2026-10-24
 

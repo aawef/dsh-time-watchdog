@@ -118,11 +118,13 @@ pnpm install
 ## 测试
 
 ```bash
-node --test "tests/*.test.mjs"
+node --test "tests/*.test.mjs" "tests/*.mjs"
 ```
 
 - `tests/clock.test.mjs`：折叠单元与读数口径（纯逻辑）。
 - `tests/client.test.mjs`：`formatDuration` / `stepToast` / `isToastVisible`
   （在 vm 沙箱里求值 `lib/client.js`，不碰 DOM）。
+- `tests/client.render.test.mjs`：用迷你 React 把卡片真渲染成 HTML，验证
+  「到点弹 / 间隔未到不弹 / off 不弹 / 5 秒撤 / 换轮重置 / 轮结束也能撤干净」。
 
-两套都不 import 宿主包，所以在插件目录内就能跑。
+三套都不 import 宿主包，所以在插件目录内就能跑。当前共 26 条。
