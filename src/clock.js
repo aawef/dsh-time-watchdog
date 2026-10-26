@@ -7,11 +7,24 @@
 export const PROJECTION_KEY = "clock";
 
 /** 折叠单元的版本。改了 state 形状必须 +1，否则同 key 共存会冲突。 */
-export const STATE_VERSION = 1;
+export const STATE_VERSION = 2;
+
+/**
+ * 提醒消息的来源标记。客户端与宿主都靠它区分「自己注入的隐藏提示」
+ * 与真正的用户发言——`source.kind !== "user"` 的 user/message 在 UI 里
+ * 归为 context 节点，不渲染成聊天气泡。
+ */
+export const NOTICE_SOURCE_KIND = "dsh-clock";
 
 /**
  * 折叠单元的初始状态。
- * @returns {{turn: number, turnStartedAt: number | null, lastTurnElapsedMs: number | null}}
+ * @returns {{
+ *   turn: number,
+ *   turnStartedAt: number | null,
+ *   lastTurnElapsedMs: number | null,
+ *   injectSeq: number,
+ *   lastInjectionAt: number | null
+ * }}
  */
 export function createInitialState() {
 	return {
@@ -20,13 +33,18 @@ export function createInitialState() {
 		/** 本轮 turn/start 的时刻（epoch ms），没有进行中的轮时为 null。 */
 		turnStartedAt: null,
 		/** 上一轮的总耗时（epoch ms），没有结束过的轮时为 null。 */
-		lastTurnElapsedMs: null
+		lastTurnElapsedMs: null,
+		/** 已注入的提醒条数，客户端靠它变化弹「提示词已发送」。 */
+		injectSeq: 0,
+		/** 最后一条提醒的注入时刻。 */
+		lastInjectionAt: null
 	};
 }
 
 /**
  * 把一个 session 事件折叠进状态。
- * 只认 turn/start 与 turn/end，其余事件原样返回（保持引用相等，宿主据此跳过重算）。
+ * 只认 turn/start、turn/end 与本插件自己注入的 user/message，
+ * 其余事件原样返回（保持引用相等，宿主据此跳过重算）。
  * @param {object} state - 当前状态
  * @param {{type: string, time: number, data?: any}} event - session 事件
  * @returns {object} 新状态或原状态
@@ -47,6 +65,15 @@ export function applyEvent(state, event) {
 				...state,
 				turnStartedAt: null,
 				lastTurnElapsedMs: elapsed
+			};
+		}
+		case "user/message": {
+			// 只有本插件注入的提醒算数：普通用户发言的 source.kind 是 "user"。
+			if (event.data?.source?.kind !== NOTICE_SOURCE_KIND) return state;
+			return {
+				...state,
+				injectSeq: state.injectSeq + 1,
+				lastInjectionAt: event.time
 			};
 		}
 		default:

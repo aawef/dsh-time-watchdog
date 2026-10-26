@@ -15,7 +15,9 @@ test("初始状态：没有轮次、没有起点", () => {
 	assert.deepEqual(createInitialState(), {
 		turn: 0,
 		turnStartedAt: null,
-		lastTurnElapsedMs: null
+		lastTurnElapsedMs: null,
+		injectSeq: 0,
+		lastInjectionAt: null
 	});
 });
 
@@ -25,7 +27,13 @@ test("turn/start 记录起点与轮次", () => {
 		time: 1000,
 		data: { turn: 1 }
 	});
-	assert.deepEqual(state, { turn: 1, turnStartedAt: 1000, lastTurnElapsedMs: null });
+	assert.deepEqual(state, {
+		turn: 1,
+		turnStartedAt: 1000,
+		lastTurnElapsedMs: null,
+		injectSeq: 0,
+		lastInjectionAt: null
+	});
 });
 
 test("无关事件返回原引用，宿主据此跳过重算", () => {
@@ -34,9 +42,32 @@ test("无关事件返回原引用，宿主据此跳过重算", () => {
 		time: 1000,
 		data: { turn: 1 }
 	});
-	for (const type of ["assistant/message", "tool/result", "user/message", "step/start"]) {
+	for (const type of ["assistant/message", "tool/result", "step/start"]) {
 		assert.equal(applyEvent(state, { type, time: 4000, data: {} }), state);
 	}
+	// 真用户的发言（source.kind === "user"）不算注入，同样保持原引用。
+	assert.equal(
+		applyEvent(state, { type: "user/message", time: 4000, data: { source: { kind: "user" } } }),
+		state
+	);
+});
+
+test("本插件注入的提醒累加 injectSeq 并记时刻", () => {
+	const state = applyEvent(createInitialState(), { type: "turn/start", time: 1000, data: { turn: 1 } });
+	const once = applyEvent(state, {
+		type: "user/message",
+		time: 2000,
+		data: { source: { kind: "dsh-clock", form: "notice" } }
+	});
+	assert.equal(once.injectSeq, 1);
+	assert.equal(once.lastInjectionAt, 2000);
+	const twice = applyEvent(once, {
+		type: "user/message",
+		time: 3000,
+		data: { source: { kind: "dsh-clock", form: "notice" } }
+	});
+	assert.equal(twice.injectSeq, 2);
+	assert.equal(twice.lastInjectionAt, 3000);
 });
 
 test("turn/end 结算耗时并清空起点", () => {
@@ -44,7 +75,13 @@ test("turn/end 结算耗时并清空起点", () => {
 		applyEvent(createInitialState(), { type: "turn/start", time: 1000, data: { turn: 1 } }),
 		{ type: "turn/end", time: 61000, data: { turn: 1 } }
 	);
-	assert.deepEqual(state, { turn: 1, turnStartedAt: null, lastTurnElapsedMs: 60000 });
+	assert.deepEqual(state, {
+		turn: 1,
+		turnStartedAt: null,
+		lastTurnElapsedMs: 60000,
+		injectSeq: 0,
+		lastInjectionAt: null
+	});
 });
 
 test("下一轮开始时清掉上一轮的耗时", () => {

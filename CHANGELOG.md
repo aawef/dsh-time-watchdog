@@ -1,5 +1,40 @@
 # CHANGELOG
 
+## 0.3.0 — 2026-10-26
+
+新增「按时间收尾提醒」：一条 `/set-time` 命令让模型在对话超时时被提示收尾，
+外加设置页可定制的提示词模板与「提示词已发送」卡片。
+
+- 新增 `src/timing.js`：`/set-time <t1> <t2> <t3>` 的解析、4 档模板渲染（占位符
+  `&t1&` `&t2&` `&t3&` `&t4&`）、以及纯函数排程 `stepPlan(plan, now)`。
+- 新增 `agent/pre-step` 监听：每步之前判断该不该提醒，到期就用
+  `createUserMessage({ source: { kind: "dsh-clock", form: "notice" } })` 把提示词
+  加进这一步的 `messages`。因为 `pre-step` 能替换进入该步的消息，提示词与工具结果
+  在同一个模型请求里被读到，不必等到下一轮。
+- 新增 `/set-time` 命令：`/set-time 30 300 60` = 预期 5 分钟、期间每 30 秒提醒、
+  超时后每 60 秒提醒；空参数查询；`t3 <= 0` 关闭超时后周期；`t1 >= t2` 跳过未超时周期。
+- 新增「只对一轮生效」的生命周期：没有进行中的对话时挂起给下一轮，有则从指令发出
+  时刻起算并立即注入开始提示词，该轮 `turn/end` 即清理（`pending` 的计划例外——
+  它是给下一轮的，必须活过这一轮的 `turn/end`）。
+- 折叠单元 `clock` 升到 `stateVersion: 2`：新增 `injectSeq` / `lastInjectionAt`，
+  客户端据此知道「宿主刚注入了一条提醒」。
+- 新增「提示词已发送」卡片：投影 `injectSeq` 变大就弹 5 秒，可在设置页关闭。
+- 新建设置页标签页（`settings.section`，id `dsh-clock`，order 92）：编辑 4 种模板、
+  恢复默认、保存、Toast 开关、参数语义说明。
+- 配置形状扩展为 `{ intervalSeconds, toastOnPrompt, templates }`，读不到一律退回默认值；
+  `PUT /dsh-clock/api/config` 支持局部更新。
+- 新增测试：`tests/timing.test.mjs`（21 条）、`tests/host.test.mjs`（12 条，
+  用假 ctx 跑 `apply()`）。客户端 `__test` 补 `stepInjectionToast`。
+
+### 事实更正（写在这里免得以后又踩）
+
+- **`billion-context` 并不走 `agent/pre-step`**：它的 `dist/agent/dsh-native.js`
+  里 `agent/pre-step` / `createUserMessage` / `systemPrompt` / `sessionProjections`
+  的引用数全是 0，它是在 `llm/stream` 水位线上改请求。把它当作「注入通道样板」是错的。
+- **`runtime-context` 注入会落历史**（`dsh-agent-loop/lib/index.js:1062-1066`
+  用 `surfaceOp: "append"`）。想让一条提醒能被模型读到，就必然要落一条 `user/message`，
+  「既进模型上下文又完全不进历史」不存在。本插件选择落历史，接受这个代价。
+
 ## 0.2.1 — 2026-10-24
 
 真机上暴露的两个接线缺陷，都不影响离线测试（26 条测试全绿却仍然不可用）。

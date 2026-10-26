@@ -2,6 +2,8 @@
 //
 // 纯函数，不碰文件系统、不碰宿主包，测试可以直接构造输入。
 
+import { normalizeTemplates } from "./timing.js";
+
 /** 允许的最小间隔（秒）。低于 1 秒没有意义：倒计时本身就是 1 秒一跳。 */
 export const MIN_INTERVAL_SECONDS = 1;
 
@@ -67,13 +69,26 @@ export function describeConfig(config) {
 }
 
 /**
- * 从持久化载荷里恢复设置，任何脏数据都退回「关闭」。
+ * 「发送提示词时是否弹 Toast」的开关默认值。规范要求默认开启。
+ */
+export const DEFAULT_TOAST_ON_PROMPT = true;
+
+/**
+ * 从持久化载荷里恢复设置，任何脏数据都退回默认值。
  * @param {unknown} payload - 读到的 JSON
- * @returns {{intervalSeconds: number | null}}
+ * @returns {{intervalSeconds: number | null, toastOnPrompt: boolean, templates: object}}
  */
 export function readConfig(payload) {
 	const raw = payload?.intervalSeconds;
-	if (typeof raw !== "number" || !Number.isFinite(raw)) return { intervalSeconds: null };
-	if (raw < MIN_INTERVAL_SECONDS || raw > MAX_INTERVAL_SECONDS) return { intervalSeconds: null };
-	return { intervalSeconds: Math.round(raw) };
+	const intervalSeconds =
+		typeof raw === "number" && Number.isFinite(raw) && raw >= MIN_INTERVAL_SECONDS && raw <= MAX_INTERVAL_SECONDS
+			? Math.round(raw)
+			: null;
+	const toastOnPrompt =
+		typeof payload?.toastOnPrompt === "boolean" ? payload.toastOnPrompt : DEFAULT_TOAST_ON_PROMPT;
+	return {
+		intervalSeconds,
+		toastOnPrompt,
+		templates: normalizeTemplates(payload?.templates)
+	};
 }

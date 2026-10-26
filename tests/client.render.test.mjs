@@ -149,6 +149,16 @@ async function createHarness() {
 		flush();
 	}
 
+	/**
+	 * 模拟「宿主投影推送导致组件重渲染」。
+	 * 真实 React 里 useProjection 变了会自动重渲染，迷你替身没有订阅，
+	 * 所以测试要显式叫一声。
+	 */
+	function rerender() {
+		dirty = true;
+		flush();
+	}
+
 	const projection = { current: null };
 
 	return {
@@ -156,6 +166,7 @@ async function createHarness() {
 		clock,
 		flush,
 		tick,
+		rerender,
 		projection,
 		setFetched: (next) => {
 			fetched = next;
@@ -190,9 +201,14 @@ function installComponent(harness) {
 		}
 	};
 	harness.exports.apply(ctx);
-	assert.equal(registered.length, 1, "应该只注册一个槽位条目");
-	assert.equal(registered[0].options.name, "conversation.input.overlay");
-	harness.exports.__component = registered[0].component;
+	assert.equal(registered.length, 2, "应该注册两个槽位条目：浮层卡片 + 设置页");
+	const overlay = registered.find((entry) => entry.options.name === "conversation.input.overlay");
+	const settings = registered.find((entry) => entry.options.name === "settings.section");
+	assert.ok(overlay !== undefined, "缺少 conversation.input.overlay 条目");
+	assert.ok(settings !== undefined, "缺少 settings.section 条目");
+	assert.equal(settings.options.id, "dsh-clock");
+	harness.exports.__component = overlay.component;
+	harness.exports.__settingsComponent = settings.component;
 	return harness;
 }
 
@@ -285,4 +301,104 @@ test("提醒卡片：换到新一轮后从新起点重新算间隔", async () =>
 	harness.clock.now += 29_000;
 	harness.tick();
 	assert.match(harness.html(), /第 2 轮/);
+});
+
+// ── 「提示词已发送」卡片 ────────────────────────────────────────────
+
+test("已发送卡片：injectSeq 变大就弹，5 秒后消失", async () => {
+	const harness = installComponent(await createHarness());
+	harness.setFetched({ ok: true, intervalSeconds: null, toastOnPrompt: true });
+	harness.projection.current = { turn: 1, turnStartedAt: null, lastTurnElapsedMs: 0, injectSeq: 0 };
+	harness.flush();
+	await harness.settle();
+	harness.flush();
+	assert.equal(harness.html(), "", "首帧只对基线，不该弹");
+
+	// 宿主注入了一条提醒
+	harness.projection.current = { turn: 1, turnStartedAt: null, lastTurnElapsedMs: 0, injectSeq: 1 };
+	harness.clock.now += 500;
+	harness.rerender();
+	assert.match(harness.html(), /提示词已发送/);
+
+	// 4 秒后还在
+	harness.clock.now += 4_000;
+	harness.tick();
+	assert.match(harness.html(), /提示词已发送/);
+
+	// 再过 2 秒：撤
+	harness.clock.now += 2_000;
+	harness.tick();
+	assert.equal(harness.html(), "");
+});
+
+test("已发送卡片：设置页关掉开关后不弹", async () => {
+	const harness = installComponent(await createHarness());
+	harness.setFetched({ ok: true, intervalSeconds: null, toastOnPrompt: false });
+	harness.projection.current = { turn: 1, turnStartedAt: null, lastTurnElapsedMs: 0, injectSeq: 0 };
+	harness.flush();
+	await harness.settle();
+	harness.flush();
+
+	harness.projection.current = { turn: 1, turnStartedAt: null, lastTurnElapsedMs: 0, injectSeq: 1 };
+	harness.clock.now += 500;
+	harness.rerender();
+	assert.equal(harness.html(), "");
+});
+
+test("已发送卡片：页面刷新后 injectSeq 已有值也不补弹", async () => {
+	const harness = installComponent(await createHarness());
+	harness.setFetched({ ok: true, intervalSeconds: null, toastOnPrompt: true });
+	// 一进来就有 5 条历史注入
+	harness.projection.current = { turn: 3, turnStartedAt: null, lastTurnElapsedMs: 1000, injectSeq: 5 };
+	harness.flush();
+	await harness.settle();
+	harness.flush();
+	assert.equal(harness.html(), "");
+});
+
+test("两张卡片可以同时挂着", async () => {
+	const harness = installComponent(await createHarness());
+	harness.setFetched({ ok: true, intervalSeconds: 30, toastOnPrompt: true });
+	harness.projection.current = {
+		turn: 2,
+		turnStartedAt: harness.clock.now - 31_000,
+		lastTurnElapsedMs: null,
+		injectSeq: 0
+	};
+	harness.flush();
+	await harness.settle();
+	harness.flush();
+	assert.match(harness.html(), /本轮对话已运行/);
+
+	// 同一时刻注入一条
+	harness.projection.current = {
+		turn: 2,
+		turnStartedAt: harness.clock.now - 31_000,
+		lastTurnElapsedMs: null,
+		injectSeq: 1
+	};
+	harness.rerender();
+	const html = harness.html();
+	assert.match(html, /本轮对话已运行/);
+	assert.match(html, /提示词已发送/);
+});
+
+test("设置页：注册项带 id / label / order", async () => {
+	const registered = [];
+	const ctx = {
+		effect: (factory) => factory(),
+		slots: {
+			inject: (_name, factory) => factory(),
+			register: (options, component) => {
+				registered.push({ options, component });
+				return () => {};
+			}
+		}
+	};
+	(await createHarness()).exports.apply(ctx);
+	const settings = registered.find((entry) => entry.options.name === "settings.section");
+	assert.ok(settings !== undefined);
+	assert.equal(settings.options.id, "dsh-clock");
+	assert.equal(settings.options.label(), "计时与收尾提醒");
+	assert.ok(Number.isFinite(settings.options.order));
 });

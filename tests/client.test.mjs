@@ -17,6 +17,7 @@ const reactStub = {
 	useState: (init) => [typeof init === "function" ? init() : init, () => {}],
 	useRef: (init) => ({ current: init }),
 	useEffect: () => {},
+	useCallback: (fn) => fn,
 	useMemo: (fn) => fn()
 };
 
@@ -57,7 +58,7 @@ async function loadClient() {
 }
 
 const client = await loadClient();
-const { formatDuration, stepToast, isToastVisible, HOLD_MS } = client.__test;
+const { formatDuration, stepToast, isToastVisible, stepInjectionToast, HOLD_MS, TEMPLATE_KEYS } = client.__test;
 
 test("客户端拿到的注入声明只有 slots", () => {
 	assert.deepEqual([...client.inject], ["slots"]);
@@ -147,4 +148,65 @@ test("卡片只在自己的 5 秒窗口内可见", () => {
 	assert.equal(isToastVisible(state, 5_999), true);
 	assert.equal(isToastVisible(state, 6_000), false);
 	assert.equal(isToastVisible({ lastShownAt: null, visibleUntil: null }, 0), false);
+});
+
+// ── 「提示词已发送」卡片 ──────────────────────────────────────────────
+
+test("injectSeq：首帧只记基线，不误弹", () => {
+	const out = stepInjectionToast(
+		{ lastSeq: null, visibleUntil: null },
+		{ injectSeq: 3, enabled: true, now: 1_000 }
+	);
+	assert.equal(out.due, false);
+	assert.equal(out.state.lastSeq, 3);
+});
+
+test("injectSeq：变大就弹一次，窗口 5 秒", () => {
+	const out = stepInjectionToast(
+		{ lastSeq: 3, visibleUntil: null },
+		{ injectSeq: 4, enabled: true, now: 1_000 }
+	);
+	assert.equal(out.due, true);
+	assert.equal(out.state.lastSeq, 4);
+	assert.equal(out.state.visibleUntil, 1_000 + HOLD_MS);
+});
+
+test("injectSeq：一次心跳跨多条也只弹一次", () => {
+	const out = stepInjectionToast(
+		{ lastSeq: 3, visibleUntil: null },
+		{ injectSeq: 9, enabled: true, now: 1_000 }
+	);
+	assert.equal(out.due, true);
+	assert.equal(out.state.lastSeq, 9);
+});
+
+test("injectSeq：没变不弹；开关关闭时只记账不弹", () => {
+	assert.equal(
+		stepInjectionToast({ lastSeq: 5, visibleUntil: null }, { injectSeq: 5, enabled: true, now: 1 }).due,
+		false
+	);
+	const muted = stepInjectionToast(
+		{ lastSeq: 5, visibleUntil: null },
+		{ injectSeq: 6, enabled: false, now: 1 }
+	);
+	assert.equal(muted.due, false);
+	assert.equal(muted.state.lastSeq, 6, "关闭时也要记账，否则重新开启会补弹一次");
+});
+
+test("injectSeq：投影缺席（undefined/null）时安全跳过并重置基线", () => {
+	for (const injectSeq of [undefined, null]) {
+		const out = stepInjectionToast({ lastSeq: 7, visibleUntil: null }, { injectSeq, enabled: true, now: 1 });
+		assert.equal(out.due, false);
+		// 基线重置为 null：投影恢复后先重新对基线，不会因为「跨了未知的一段」补弹一次。
+		assert.equal(out.state.lastSeq, null);
+	}
+	// 恢复后第一拍只记基线
+	const back = stepInjectionToast({ lastSeq: null, visibleUntil: null }, { injectSeq: 12, enabled: true, now: 2 });
+	assert.equal(back.due, false);
+	assert.equal(back.state.lastSeq, 12);
+});
+
+test("模板字段与宿主 src/timing.js 的 TEMPLATE_KEYS 一致", async () => {
+	const host = await import("../src/timing.js");
+	assert.deepEqual([...TEMPLATE_KEYS], [...host.TEMPLATE_KEYS]);
 });
