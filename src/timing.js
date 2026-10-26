@@ -1,4 +1,4 @@
-// dsh-clock 的「定时提醒」纯逻辑层。
+// dsh-time-watchdog 的「定时提醒」纯逻辑层。
 //
 // 这里只放三件事，全部是纯函数，不 import 宿主包、不碰 Date.now()：
 //   1. `/set-time <t1> <t2> <t3>` 的参数解析；

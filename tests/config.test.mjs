@@ -1,4 +1,4 @@
-// dsh-clock 的配置归一化测试：/set-time 参数、toast 开关、模板缺项。
+// dsh-time-watchdog 的配置归一化测试：/set-time 参数、toast 开关、模板缺项。
 import assert from "node:assert/strict";
 import test from "node:test";
 

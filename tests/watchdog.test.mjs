@@ -1,4 +1,4 @@
-// dsh-clock 纯逻辑单元测试。只依赖 src/clock.js，不 import 宿主包，
+// dsh-time-watchdog 纯逻辑单元测试。只依赖 src/watchdog.js，不 import 宿主包，
 // 因此在插件目录内直接 `node --test` 就能跑。
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -9,7 +9,7 @@ import {
 	describeElapsed,
 	formatDuration,
 	renderElapsed
-} from "../src/clock.js";
+} from "../src/watchdog.js";
 
 test("初始状态：没有轮次、没有起点", () => {
 	assert.deepEqual(createInitialState(), {
@@ -60,7 +60,7 @@ test("本插件注入的提醒累加 injectSeq 并记时刻", () => {
 		type: "user/message",
 		time: 2000,
 		data: {
-			source: { kind: "dsh-clock", form: "notice" },
+			source: { kind: "dsh-time-watchdog", form: "notice" },
 			content: [{ type: "text", text: "请尽快收尾。" }]
 		}
 	});
@@ -71,7 +71,7 @@ test("本插件注入的提醒累加 injectSeq 并记时刻", () => {
 	const twice = applyEvent(once, {
 		type: "user/message",
 		time: 3000,
-		data: { source: { kind: "dsh-clock", form: "notice" } }
+		data: { source: { kind: "dsh-time-watchdog", form: "notice" } }
 	});
 	assert.equal(twice.injectSeq, 2);
 	assert.equal(twice.lastInjectionAt, 3000);
@@ -82,21 +82,21 @@ test("lastNoticeText：没有 content 或没有 text 块时退化为 null", () =
 	const noContent = applyEvent(state, {
 		type: "user/message",
 		time: 2000,
-		data: { source: { kind: "dsh-clock", form: "notice" } }
+		data: { source: { kind: "dsh-time-watchdog", form: "notice" } }
 	});
 	assert.equal(noContent.lastNoticeText, null, "取不到正文时不能是 undefined 或空串");
 
 	const noText = applyEvent(state, {
 		type: "user/message",
 		time: 2000,
-		data: { source: { kind: "dsh-clock", form: "notice" }, content: [{ type: "image" }] }
+		data: { source: { kind: "dsh-time-watchdog", form: "notice" }, content: [{ type: "image" }] }
 	});
 	assert.equal(noText.lastNoticeText, null);
 
 	const blank = applyEvent(state, {
 		type: "user/message",
 		time: 2000,
-		data: { source: { kind: "dsh-clock", form: "notice" }, content: [{ type: "text", text: "   " }] }
+		data: { source: { kind: "dsh-time-watchdog", form: "notice" }, content: [{ type: "text", text: "   " }] }
 	});
 	assert.equal(blank.lastNoticeText, null, "只有空白也算没内容");
 });
@@ -107,7 +107,7 @@ test("lastNoticeText：多个 text 块按空行拼接", () => {
 		type: "user/message",
 		time: 2000,
 		data: {
-			source: { kind: "dsh-clock", form: "notice" },
+			source: { kind: "dsh-time-watchdog", form: "notice" },
 			content: [
 				{ type: "text", text: "第一段" },
 				{ type: "image" },

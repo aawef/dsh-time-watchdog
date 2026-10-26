@@ -1,10 +1,10 @@
-// dsh-clock 的纯逻辑层：折叠状态 + 时长格式化。
+// dsh-time-watchdog 的纯逻辑层：折叠状态 + 时长格式化。
 //
 // 这里刻意不 import 任何宿主包，也不碰 Date.now()：
 // 所有时间由调用方传入，测试可以直接构造事件序列。
 
 /** sessionProjections 的单元 key。 */
-export const PROJECTION_KEY = "clock";
+export const PROJECTION_KEY = "watchdog";
 
 /** 折叠单元的版本。改了 state 形状必须 +1，否则同 key 共存会冲突。 */
 export const STATE_VERSION = 3;
@@ -14,7 +14,7 @@ export const STATE_VERSION = 3;
  * 与真正的用户发言——`source.kind !== "user"` 的 user/message 在 UI 里
  * 归为 context 节点，不渲染成聊天气泡。
  */
-export const NOTICE_SOURCE_KIND = "dsh-clock";
+export const NOTICE_SOURCE_KIND = "dsh-time-watchdog";
 
 /**
  * 折叠单元的初始状态。

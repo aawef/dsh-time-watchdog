@@ -1,5 +1,50 @@
 # CHANGELOG
 
+## 1.0.0 — 2026-10-26
+
+**首次开源发布**，同时**从 `dsh-clock` 改名为 `dsh-time-watchdog`**。
+
+改名的原因很实际：npm 上 `dsh-clock` 已被另一个 DSH 插件占用（作者 trk23 的「省钱时钟」，
+最新 0.1.2），而 npm 包名全局唯一、不能覆盖，所以只能用新名字发布。
+既然要改名，就一次改彻底——包名、插件 id、配置文件名、HTTP 路径、`source.kind`、
+投影 key 全部统一成 `dsh-time-watchdog`，不留两套名字互相将就。
+
+### 破坏性变更（从 0.3.x 升级时看这里）
+
+| 项目 | 旧值 | 新值 |
+| --- | --- | --- |
+| npm 包名 / 插件 id | `dsh-clock` | `dsh-time-watchdog` |
+| 配置文件 | `~/.dsh/storages/dsh-clock.json` | `~/.dsh/storages/dsh-time-watchdog.json` |
+| HTTP 端点 | `/dsh-clock/api/config` | `/dsh-time-watchdog/api/config` |
+| 折叠单元 key | `"clock"` | `"watchdog"` |
+| 注入消息 `source.kind` | `"dsh-clock"` | `"dsh-time-watchdog"` |
+| 源文件 `src/clock.js` | — | `src/watchdog.js` |
+
+**配置文件不会自动迁移**：新的路径下没有文件时会用默认值。旧配置里如果你改过
+提示词模板或 `/clock` 间隔，请把 `~/.dsh/storages/dsh-clock.json` 复制成
+`dsh-time-watchdog.json` 再重启，或直接在设置页重设一次。
+
+**两个斜杠命令没有改名**：`/clock`（周期卡片间隔）与 `/set-time`（三段式提醒）保持原样，
+已有的使用习惯不用改。工具名 `clock_elapsed` 也保持不变——它描述的是「本轮已用时间」
+这件事，跟插件叫什么无关。
+
+### 新增（开源相关）
+
+- `LICENSE`（MIT）。
+- `package.json` 补齐 `author` / `repository` / `homepage` / `bugs` / `dsh-plugin` 关键字，
+  `files` 白名单加入 `LICENSE` 与 `docs`。
+- `docs/发布说明.md`：npm / GitHub Release / awesome-dsh-plugin 三条发布通道的完整操作手册，
+  含收录门槛、PR 模板、以及「市场卡片版本号滞后约一天」这类容易误判的现象。
+- `.github/workflows/release.yml`：push `v*` 自动建 Release，校验 tag 与版本一致、
+  语法自检、检查 `dsh.bundle.patch` 存在、从本 CHANGELOG 抽本节当 release notes、
+  并把不带版本号的 `dsh-time-watchdog.tgz` 挂上去。
+- `README.md` 重写：加 npm/license/topic 徽章、英文摘要、一句话安装命令。
+
+### 修正
+
+- `tests/host.test.mjs` 里「两条命令名字」的断言仍然只断言 `clock` / `set-time`——
+  这是对的，命令确实没改名；但注释里写明原因，免得以后误以为漏改。
+
 ## 0.3.2 — 2026-10-26
 
 「提示词已发送」卡片多了一个「显示详细内容」开关。
@@ -39,7 +84,7 @@
 - 新增 `src/timing.js`：`/set-time <t1> <t2> <t3>` 的解析、4 档模板渲染（占位符
   `&t1&` `&t2&` `&t3&` `&t4&`）、以及纯函数排程 `stepPlan(plan, now)`。
 - 新增 `agent/pre-step` 监听：每步之前判断该不该提醒，到期就用
-  `createUserMessage({ source: { kind: "dsh-clock", form: "notice" } })` 把提示词
+  `createUserMessage({ source: { kind: "dsh-time-watchdog", form: "notice" } })` 把提示词
   加进这一步的 `messages`。因为 `pre-step` 能替换进入该步的消息，提示词与工具结果
   在同一个模型请求里被读到，不必等到下一轮。
 - 新增 `/set-time` 命令：`/set-time 30 300 60` = 预期 5 分钟、期间每 30 秒提醒、
@@ -50,10 +95,10 @@
 - 折叠单元 `clock` 升到 `stateVersion: 2`：新增 `injectSeq` / `lastInjectionAt`，
   客户端据此知道「宿主刚注入了一条提醒」。
 - 新增「提示词已发送」卡片：投影 `injectSeq` 变大就弹 5 秒，可在设置页关闭。
-- 新建设置页标签页（`settings.section`，id `dsh-clock`，order 92）：编辑 4 种模板、
+- 新建设置页标签页（`settings.section`，id `dsh-time-watchdog`，order 92）：编辑 4 种模板、
   恢复默认、保存、Toast 开关、参数语义说明。
 - 配置形状扩展为 `{ intervalSeconds, toastOnPrompt, templates }`，读不到一律退回默认值；
-  `PUT /dsh-clock/api/config` 支持局部更新。
+  `PUT /dsh-time-watchdog/api/config` 支持局部更新。
 - 新增测试：`tests/timing.test.mjs`（21 条）、`tests/host.test.mjs`（12 条，
   用假 ctx 跑 `apply()`）。客户端 `__test` 补 `stepInjectionToast`。
 
@@ -75,7 +120,7 @@
   时，带空格的写法直接 `return void 0`（不认领），只有声明了 `input.hint`
   才走 `leadingClaim` 把参数当 `rawInput` 传下来。给 `/clock` 补上
   `input: { hint: "秒数或 off，例如 30、2m、off" }`。
-- 修：`GET /dsh-clock/api/config` 一直 404，浏览器端拿不到 t，卡片永不弹。
+- 修：`GET /dsh-time-watchdog/api/config` 一直 404，浏览器端拿不到 t，卡片永不弹。
   根因是 `ctx.get("webServer")` 的 cordis 语义：`get()` 默认 `strict = true`，
   只返回「提供方 fiber 已 active」的服务，而 `dsh-host-webserver` 的
   `[Service.init]` 是 async（等 socket bind），插件加载时它还没就绪 → 读到
@@ -92,9 +137,9 @@
   排程从 `turnStartedAt` 起算，间隔按「上次弹卡时刻」推进，不累积漂移；`turn/end` 后不再弹。
 - 新增 `/clock` 斜杠命令：`/clock 30` 设 30 秒，`/clock 2m` 用分钟，`/clock off`（或 `0`）关闭，
   空参数回显当前设置。命令只写配置、不产生模型消息。
-- 新增 HTTP 端点 `GET /dsh-clock/api/config`：把 t 交给浏览器端（客户端拿不到宿主内存，
+- 新增 HTTP 端点 `GET /dsh-time-watchdog/api/config`：把 t 交给浏览器端（客户端拿不到宿主内存，
   只有同源 fetch 一条路）。
-- 配置持久化到 `~/.dsh/storages/dsh-clock.json`（`{ "intervalSeconds": number | null }`），
+- 配置持久化到 `~/.dsh/storages/dsh-time-watchdog.json`（`{ "intervalSeconds": number | null }`），
   不走 `storageDomain`：只有一个数字，且那块 API 有「绝不能 import 内核包」的坑。
 - `clock` 折叠单元补上 `wire` 块（`viewSchema` + `view`），否则是 host-only，
   浏览器端 `useProjection("clock")` 永远读到 `undefined`，卡片无从计时。

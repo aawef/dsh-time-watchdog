@@ -1,22 +1,63 @@
-# dsh-clock
+# dsh-time-watchdog
 
-给 DSH 加一只时钟：记录**本轮对话**从 `turn/start` 开始已经运行了多久，并据此做三件事：
+[![npm](https://img.shields.io/npm/v/dsh-time-watchdog)](https://www.npmjs.com/package/dsh-time-watchdog)
+[![license](https://img.shields.io/npm/l/dsh-time-watchdog)](./LICENSE)
+[![dsh-plugin](https://img.shields.io/badge/topic-dsh--plugin-blue)](https://github.com/topics/dsh-plugin)
+
+给 DSH 加一只**计时看门狗**：记录**本轮对话**从 `turn/start` 开始已经运行了多久，并据此做四件事：
 
 - 模型侧：`clock_elapsed` 工具，随时读到本轮已用时间。
 - 模型侧：`/set-time` 设定的**分段提醒**，在每步之前向模型注入一条隐藏提示词，催它收尾。
 - 人侧：聊天气泡上方的**卡片**——周期显示「本轮已运行多久」，以及每条提示词发出时提示「提示词已发送」。
 - 人侧：设置页里可编辑的 4 种提示词模板 + Toast 开关。
 
+> **English (short)**: A turn timer for DeepSeek Harness. It folds `turn/start` into a
+> session projection to answer "how long has this turn been running", exposes that as the
+> `clock_elapsed` tool, and uses `agent/pre-step` to inject wrap-up prompts on a
+> `/set-time <t1> <t2> <t3>` schedule. Two cards above the composer show run-time and
+> "prompt sent"; four prompt templates are editable in Settings.
+> No network, no telemetry, config is one JSON file under `~/.dsh/storages/`.
+
+## 安装
+
+```bash
+dsh plugin --profile <你的 profile> add dsh-time-watchdog
+```
+
+装完重启 DSH 桌面进程（宿主侧 `lib/index.js` 是 ESM，刷新页面不够）。
+
+也可以直接从本仓库装（想跟 main 最新代码时）：
+
+```bash
+dsh plugin --profile <你的 profile> add git+https://github.com/aawef/dsh-time-watchdog.git
+```
+
+<details>
+<summary>本地开发：从源码目录接线</summary>
+
+```bash
+# 1. 接到 profile（junction，不需要管理员权限）
+powershell -Command "New-Item -ItemType Junction -Path \"$env:USERPROFILE\.dsh\profiles\<profile>\my-plugins\dsh-time-watchdog\" -Target \"<本目录绝对路径>\""
+
+# 2. 在 ~/.dsh/profiles/<profile> 里加依赖并装
+#    package.json → dependencies:  "dsh-time-watchdog": "file:../web/my-plugins/dsh-time-watchdog"
+#    package.json → dsh.profile.bundles:  追加 "dsh-time-watchdog"
+pnpm install
+```
+
+</details>
+
+
 ## 它做什么
 
 | 能力 | 说明 |
 | --- | --- |
-| 计时 | 折叠单元 `clock` 在 `turn/start` 记下时刻，在 `turn/end` 结算总耗时 |
+| 计时 | 折叠单元 `watchdog` 在 `turn/start` 记下时刻，在 `turn/end` 结算总耗时 |
 | 读数 | 工具 `clock_elapsed` 返回本轮已用时间（进行中持续累计，已结束冻结） |
 | 周期卡片 | `/clock` 设的间隔，弹卡显示已运行时长 |
 | 收尾提醒 | `/set-time <t1> <t2> <t3>` 三段式排程，到点注入提示词 |
 | 提示词定制 | 4 种模板（开始 / 未超时周期 / 首次超时 / 超时后周期），设置页可改 |
-| 配置 | `~/.dsh/storages/dsh-clock.json` |
+| 配置 | `~/.dsh/storages/dsh-time-watchdog.json` |
 
 ## 计时口径
 
@@ -92,7 +133,7 @@
 
 - 通道是 `agent/pre-step`（与官方 `dsh-time-context` 同一条路）。`pre-step` 能替换进入该步的消息，
   所以注入的提醒会在**同一个模型请求**里被读到，而不是等到下一个请求。
-- 注入用 `createUserMessage({ source: { kind: "dsh-clock", form: "notice", summary } })`。
+- 注入用 `createUserMessage({ source: { kind: "dsh-time-watchdog", form: "notice", summary } })`。
   `source.kind !== "user"` 的 `user/message` 在客户端归为 `context` 节点、不渲染成聊天气泡——
   所以模型读得到、界面上看不到，正是「隐藏提示」要的效果。
 - 计划（`t1/t2/t3`、`deadline`、已发档位）存在内存的 `Map<sessionId, plan>` 里，
@@ -135,14 +176,14 @@
 
 - 卡片挂在 `conversation.input.overlay`（composer 卡片顶部的零高锚点
   `data-composer-overlay`），子元素用 `bottom:100%` 浮在输入框上方。
-- 客户端读的是 `useProjection("clock")`，所以 `clock` 折叠单元必须带 `wire` 块；
+- 客户端读的是 `useProjection("watchdog")`，所以 `watchdog` 折叠单元必须带 `wire` 块；
   没有 `wire` 的单元是 host-only，浏览器端读到 `undefined`。
-- 客户端拿不到宿主内存，配置走同源 `/dsh-clock/api/config`。
+- 客户端拿不到宿主内存，配置走同源 `/dsh-time-watchdog/api/config`。
 - 样式只用 `--dsw-alias-*` 主题变量，不 `require` 任何 Harness Client 包。
 
 ## 设置页
 
-设置 → 「计时与收尾提醒」（`settings.section` 槽位，id `dsh-clock`，order 92）。
+设置 → 「计时与收尾提醒」（`settings.section` 槽位，id `dsh-time-watchdog`，order 92）。
 
 - 编辑 4 种提示词模板，改动即时保存
 - 「恢复默认模板」把四个文本框填回默认值（仍需点保存）
@@ -164,7 +205,7 @@
 
 ## HTTP 端点
 
-`/dsh-clock/api/config`
+`/dsh-time-watchdog/api/config`
 
 | 方法 | 行为 |
 | --- | --- |
@@ -172,20 +213,6 @@
 | `PUT` | 局部更新（body 里给哪些字段就改哪些），返回更新后的完整配置 |
 
 `webServer` 缺席（CLI / 无 UI 组合）时端点不注册，插件其余功能照常。
-
-## 安装
-
-```bash
-# 1. 接到 profile（junction，不需要管理员权限）
-powershell -Command "New-Item -ItemType Junction -Path \"$env:USERPROFILE\.dsh\profiles\desktop\my-plugins\dsh-clock\" -Target \"<本目录绝对路径>\""
-
-# 2. 在 ~/.dsh/profiles/desktop 里加依赖并装
-#    package.json → dependencies:  "dsh-clock": "file:../web/my-plugins/dsh-clock"
-#    package.json → dsh.profile.bundles:  追加 "dsh-clock"
-pnpm install
-```
-
-重启桌面进程后生效（宿主侧 `lib/index.js` 是 ESM，刷新页面不够）。
 
 ## 生效规则
 
@@ -196,12 +223,12 @@ pnpm install
 | `package.json` | 重启；改了依赖还要 `pnpm install` |
 | `cordis.patch.yml` | 重启 |
 
-注意：`~/.dsh/profiles/desktop/node_modules/dsh-clock` 是 pnpm 装出来的**副本**，
+注意：`~/.dsh/profiles/desktop/node_modules/dsh-time-watchdog` 是 pnpm 装出来的**副本**，
 不是软链。改完源目录要重新 `pnpm install`（或手 copy）才会进宿主。
 
 ## 配置文件
 
-`~/.dsh/storages/dsh-clock.json`
+`~/.dsh/storages/dsh-time-watchdog.json`
 
 ```json
 {
@@ -228,7 +255,7 @@ node --test "tests/*.test.mjs" "tests/*.mjs"
 
 | 文件 | 覆盖 |
 | --- | --- |
-| `tests/clock.test.mjs` | 折叠单元与读数口径 |
+| `tests/watchdog.test.mjs` | 折叠单元与读数口径 |
 | `tests/timing.test.mjs` | `/set-time` 解析、模板渲染、`stepPlan` 排程决策 |
 | `tests/client.test.mjs` | 客户端纯函数（vm 沙箱里求值 `lib/client.js`） |
 | `tests/client.render.test.mjs` | 迷你 React 渲染卡片，验证弹/不弹/撤/换轮 |
@@ -238,5 +265,5 @@ node --test "tests/*.test.mjs" "tests/*.mjs"
 `@deepseek-ai/dsh-llm` 与 `dsh-tools`（只在 profile 的 node_modules 下成立），
 解析不到时整组 skip 而不是报错。
 
-当前共 **71 条**：安装副本（`~/.dsh/profiles/desktop/node_modules/dsh-clock`）跑满 71 条全绿；
-源目录跑 60 条（59 pass + 1 skip），差额都是 `host.test.mjs` 需要宿主包的那部分。
+当前共 **78 条**。源目录跑 78 条（77 pass + 1 skip：`host.test.mjs` 整组跳过，
+因为源目录看不到宿主包）；在 profile 的 `node_modules` 副本里跑同一套命令能跑满 78 条全绿。

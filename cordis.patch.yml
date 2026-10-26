@@ -1,4 +1,4 @@
-# dsh-clock bundle patch: register the clock host plugin.
+# dsh-time-watchdog bundle patch: register the watchdog host plugin.
 - insert:
-    - id: dsh-clock
-      name: dsh-clock
+    - id: dsh-time-watchdog
+      name: dsh-time-watchdog

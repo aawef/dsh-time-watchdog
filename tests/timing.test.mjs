@@ -1,4 +1,4 @@
-// dsh-clock 的定时提醒逻辑测试：参数解析、模板渲染、排程决策。
+// dsh-time-watchdog 的定时提醒逻辑测试：参数解析、模板渲染、排程决策。
 import assert from "node:assert/strict";
 import test from "node:test";
 

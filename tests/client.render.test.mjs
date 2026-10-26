@@ -1,4 +1,4 @@
-// dsh-clock 客户端提醒卡片（ClockToast）的渲染级测试。
+// dsh-time-watchdog 客户端提醒卡片（ClockToast）的渲染级测试。
 //
 // client.js 没有 ESM 导出、第一行就是 `window.__ModuleLoader__.load(...)`，
 // 所以这里在 vm 沙箱里求值它，并用一个「迷你 React」把组件真的渲染成 HTML 字符串：
@@ -206,7 +206,7 @@ function installComponent(harness) {
 	const settings = registered.find((entry) => entry.options.name === "settings.section");
 	assert.ok(overlay !== undefined, "缺少 conversation.input.overlay 条目");
 	assert.ok(settings !== undefined, "缺少 settings.section 条目");
-	assert.equal(settings.options.id, "dsh-clock");
+	assert.equal(settings.options.id, "dsh-time-watchdog");
 	harness.exports.__component = overlay.component;
 	harness.exports.__settingsComponent = settings.component;
 	return harness;
@@ -481,7 +481,7 @@ test("设置页：注册项带 id / label / order", async () => {
 	(await createHarness()).exports.apply(ctx);
 	const settings = registered.find((entry) => entry.options.name === "settings.section");
 	assert.ok(settings !== undefined);
-	assert.equal(settings.options.id, "dsh-clock");
+	assert.equal(settings.options.id, "dsh-time-watchdog");
 	assert.equal(settings.options.label(), "计时与收尾提醒");
 	assert.ok(Number.isFinite(settings.options.order));
 });

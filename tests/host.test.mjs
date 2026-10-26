@@ -1,11 +1,11 @@
-// dsh-clock 宿主侧（lib/index.js）的集成测试。
+// dsh-time-watchdog 宿主侧（lib/index.js）的集成测试。
 //
 // 不 import 真宿主，而是搭一个假 ctx：把 tools / sessionProjections / commands /
 // events / inject 都做成可观测的桩。这样可以验证：
 //   · apply() 不抛异常、注册了该注册的东西；
 //   · 折叠单元真的把 turn/start、turn/end 折叠成时钟状态；
 //   · /set-time 的三种情况（无对话/对话中/查询）都给出正确回执；
-//   · pre-step 排程到点真的产出一条隐藏提醒（source.kind === "dsh-clock"）。
+//   · pre-step 排程到点真的产出一条隐藏提醒（source.kind === "dsh-time-watchdog"）。
 //
 // 注意：这个文件需要 import 真宿主包（@deepseek-ai/dsh-llm / dsh-tools），
 // 只有在 profile 的 node_modules 下才解析得到。所以测试里做了能力探测，
@@ -30,7 +30,7 @@ async function hostAvailable() {
 const AVAILABLE = await hostAvailable();
 
 /**
- * 把 HOME 指到包内的一个临时目录，避免测试碰真实的 ~/.dsh/storages/dsh-clock.json。
+ * 把 HOME 指到包内的一个临时目录，避免测试碰真实的 ~/.dsh/storages/dsh-time-watchdog.json。
  * 用包内而不是系统 temp：Windows 上 os.tmpdir() 在某些受限环境里 mkdtemp 会 EPERM。
  * 必须在 import lib/store.js 之前设好——它在模块加载时就把路径算死了。
  */
@@ -129,7 +129,7 @@ if (!AVAILABLE) {
 		const { ctx, record } = createCtx();
 		plugin.apply(ctx);
 		assert.equal(record.projections.length, 1, "应注册一个投影");
-		assert.equal(record.projections[0].key, "clock");
+		assert.equal(record.projections[0].key, "watchdog");
 		assert.equal(record.projections[0].stateVersion, 3);
 		assert.ok(typeof record.projections[0].wire?.view === "function", "必须有 wire 块，否则客户端读不到");
 
@@ -160,9 +160,9 @@ if (!AVAILABLE) {
 		plugin.apply(ctx);
 		const session = createSession("s-fold");
 		emit(record, session, { type: "turn/start", time: 1000, data: { turn: 1 } });
-		assert.equal(ctx.sessionProjections.stateOf(session, "clock").turnStartedAt, 1000);
+		assert.equal(ctx.sessionProjections.stateOf(session, "watchdog").turnStartedAt, 1000);
 		emit(record, session, { type: "turn/end", time: 5000, data: { turn: 1 } });
-		const state = ctx.sessionProjections.stateOf(session, "clock");
+		const state = ctx.sessionProjections.stateOf(session, "watchdog");
 		assert.equal(state.turnStartedAt, null);
 		assert.equal(state.lastTurnElapsedMs, 4000);
 	});
@@ -215,7 +215,7 @@ if (!AVAILABLE) {
 		assert.match(query.text, /等待下一轮/, "pending 计划必须活过 turn/end");
 	});
 
-	test("/set-time：有进行中的对话时立即注入开始提示词（source.kind 为 dsh-clock）", async () => {
+	test("/set-time：有进行中的对话时立即注入开始提示词（source.kind 为 dsh-time-watchdog）", async () => {
 		const { ctx, record } = createCtx();
 		plugin.apply(ctx);
 		const command = record.commands.find((c) => c.name === "set-time");
@@ -229,7 +229,7 @@ if (!AVAILABLE) {
 		assert.match(result.text, /已生效/);
 		assert.equal(steered.length, 1, "应立即 steer 一条开始提示词");
 		assert.equal(steered[0].role, "user");
-		assert.equal(steered[0].source.kind, "dsh-clock");
+		assert.equal(steered[0].source.kind, "dsh-time-watchdog");
 		assert.equal(steered[0].source.form, "notice");
 		assert.match(steered[0].content[0].text, /计时已生效/);
 		assert.match(steered[0].content[0].text, /5m/, "&t2& 应被替换成紧凑时长 5m（300 秒）");
@@ -257,7 +257,7 @@ if (!AVAILABLE) {
 		const decision = await runPreStep(record, agent);
 		assert.equal(decision.kind, "enter");
 		assert.equal(decision.messages.length, 1, "t1 到期应注入一条提醒");
-		assert.equal(decision.messages[0].source.kind, "dsh-clock");
+		assert.equal(decision.messages[0].source.kind, "dsh-time-watchdog");
 		assert.match(decision.messages[0].content[0].text, /时间提醒/);
 
 		// 立刻再来一次：未到下一个 t1，不该再提醒。

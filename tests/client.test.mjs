@@ -1,4 +1,4 @@
-// dsh-clock 客户端半边（lib/client.js）的单元测试。
+// dsh-time-watchdog 客户端半边（lib/client.js）的单元测试。
 //
 // client.js 的第一行就是 `window.__ModuleLoader__.load(...)`，没有 ESM 导出，
 // 所以这里用一个最小的宿主替身：先抓下 factory，再给它一个假的 `react`
@@ -49,7 +49,7 @@ async function loadClient() {
 	vm.createContext(sandbox);
 	vm.runInContext(source, sandbox, { filename: fileURLToPath(new URL("../lib/client.js", import.meta.url)) });
 	assert.notEqual(captured, null, "client.js 必须调用 __ModuleLoader__.load");
-	assert.equal(captured.id, "dsh-clock");
+	assert.equal(captured.id, "dsh-time-watchdog");
 	const exports = captured.factory((id) => {
 		assert.equal(id, "react");
 		return reactStub;
@@ -79,8 +79,8 @@ test("formatDuration 对负数与非法值不产生怪字符串", () => {
 	assert.equal(formatDuration(-5_000), "0s");
 });
 
-test("客户端 formatDuration 与 src/clock.js 的实现逐点一致（避免两份口径漂移）", async () => {
-	const { formatDuration: hostFormat } = await import("../src/clock.js");
+test("客户端 formatDuration 与 src/watchdog.js 的实现逐点一致（避免两份口径漂移）", async () => {
+	const { formatDuration: hostFormat } = await import("../src/watchdog.js");
 	for (const ms of [0, 999, 1000, 59_999, 60_000, 61_500, 3_599_000, 3_600_000, 3_723_000, 86_400_000]) {
 		assert.equal(formatDuration(ms), hostFormat(ms), `不一致于 ${ms}ms`);
 	}
