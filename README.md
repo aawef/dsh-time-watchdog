@@ -253,17 +253,19 @@ pnpm install
 node --test "tests/*.test.mjs" "tests/*.mjs"
 ```
 
-| 文件 | 覆盖 |
-| --- | --- |
-| `tests/watchdog.test.mjs` | 折叠单元与读数口径 |
-| `tests/timing.test.mjs` | `/set-time` 解析、模板渲染、`stepPlan` 排程决策 |
-| `tests/client.test.mjs` | 客户端纯函数（vm 沙箱里求值 `lib/client.js`） |
-| `tests/client.render.test.mjs` | 迷你 React 渲染卡片，验证弹/不弹/撤/换轮 |
-| `tests/host.test.mjs` | 假 ctx 跑 `apply()`，验证注册、折叠、命令回执、pre-step 注入 |
+| 文件 | 条数 | 覆盖 |
+| --- | --- | --- |
+| `tests/watchdog.test.mjs` | 14 | 折叠单元与读数口径 |
+| `tests/timing.test.mjs` | 24 | `/set-time` 解析、模板渲染、`stepPlan` 排程决策 |
+| `tests/client.test.mjs` | 16 | 客户端纯函数（vm 沙箱里求值 `lib/client.js`） |
+| `tests/client.render.test.mjs` | 13 | 迷你 React 渲染卡片，验证弹/不弹/撤/换轮 |
+| `tests/config.test.mjs` | 10 | `/clock` 参数解析与配置归一化 |
+| `tests/host.test.mjs` | 12 | 假 ctx 跑 `apply()`，验证注册、折叠、命令回执、pre-step 注入 |
 
-前四个都不 import 宿主包，在插件目录内即可跑；`host.test.mjs` 需要能解析
+前五个都不 import 宿主包，在插件目录内即可跑；`host.test.mjs` 需要能解析
 `@deepseek-ai/dsh-llm` 与 `dsh-tools`（只在 profile 的 node_modules 下成立），
 解析不到时整组 skip 而不是报错。
 
-当前共 **78 条**。源目录跑 78 条（77 pass + 1 skip：`host.test.mjs` 整组跳过，
-因为源目录看不到宿主包）；在 profile 的 `node_modules` 副本里跑同一套命令能跑满 78 条全绿。
+源目录跑 **78 条（77 pass + 1 skip）**——那 1 skip 就是 `host.test.mjs` 整组；
+在 profile 的 `node_modules` 副本里跑同一套命令是 **89 条全绿**。
+（npm 包里不含 `tests/`，所以用 npm 装出来的副本要跑测试得先把 `tests/` 拷进去。）
