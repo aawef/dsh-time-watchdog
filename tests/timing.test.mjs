@@ -9,6 +9,7 @@ import {
 	createPlan,
 	describePlan,
 	normalizeTemplates,
+	formatCompactDuration,
 	parseSetTime,
 	renderTemplate,
 	stepPlan,
@@ -29,6 +30,27 @@ test("parseSetTime：三个秒数", () => {
 	assert.deepEqual(parseSetTime("1.4 2.6 3"), { action: "set", t1: 1, t2: 3, t3: 3 });
 });
 
+test("parseSetTime：支持 1h20m30s 这种复合时长", () => {
+	assert.deepEqual(parseSetTime("1h20m30s 2h 5m"), { action: "set", t1: 4830, t2: 7200, t3: 300 });
+	assert.deepEqual(parseSetTime("1h 30m 10s"), { action: "set", t1: 3600, t2: 1800, t3: 10 });
+	// 跳级是允许的：1h30s = 3630
+	assert.deepEqual(parseSetTime("1h30s 1h 1h"), { action: "set", t1: 3630, t2: 3600, t3: 3600 });
+	// 大小写不敏感
+	assert.deepEqual(parseSetTime("1H 1M 1S"), { action: "set", t1: 3600, t2: 60, t3: 1 });
+	// 小数也支持
+	assert.deepEqual(parseSetTime("1.5h 1m 1s"), { action: "set", t1: 5400, t2: 60, t3: 1 });
+});
+
+test("parseSetTime：复合时长写法错了要明确报错", () => {
+	// 倒序不行
+	assert.equal(parseSetTime("30s20m 1m 1m").action, "error");
+	assert.match(parseSetTime("30s20m 1m 1m").message, /t1 无法识别 "30s20m"/);
+	// 重复单位不行
+	assert.equal(parseSetTime("1h1h 1m 1m").action, "error");
+	// 空片段不行
+	assert.equal(parseSetTime("1h m 1s").action, "error");
+});
+
 test("parseSetTime：参数个数不对是错误", () => {
 	const two = parseSetTime("30 300");
 	assert.equal(two.action, "error");
@@ -47,6 +69,8 @@ test("parseSetTime：无法识别的值给出具体字段名", () => {
 test("parseSetTime：t1/t2 的范围校验，t3 允许非正数", () => {
 	assert.equal(parseSetTime("0 300 60").action, "error");
 	assert.match(parseSetTime("0 300 60").message, /t1 要在 1–86400 秒之间/);
+	// 超上限时同时给出紧凑写法与秒数
+	assert.match(parseSetTime("30 25h 60").message, /收到 25h（90000 秒）/);
 	assert.equal(parseSetTime("30 999999 60").action, "error");
 	assert.match(parseSetTime("30 999999 60").message, /t2 要在/);
 	assert.equal(parseSetTime("30 300 999999").action, "error");
@@ -54,15 +78,30 @@ test("parseSetTime：t1/t2 的范围校验，t3 允许非正数", () => {
 	assert.deepEqual(parseSetTime("30 300 0"), { action: "set", t1: 30, t2: 300, t3: 0 });
 });
 
-test("renderTemplate：四个占位符都替换", () => {
-	const text = renderTemplate("a=&t1& b=&t2& c=&t3& d=&t4&", { t1: 1, t2: 2, t3: 3, t4: "9s" });
-	assert.equal(text, "a=1 b=2 c=3 d=9s");
+test("renderTemplate：四个占位符都替换，t1~t3 渲染成紧凑时长", () => {
+	const text = renderTemplate("a=&t1& b=&t2& c=&t3& d=&t4&", { t1: 1, t2: 90, t3: 4830, t4: "9s" });
+	assert.equal(text, "a=1s b=1m30s c=1h20m30s d=9s");
+});
+
+test("formatCompactDuration：够量级才进位，中间 0 段省略", () => {
+	assert.equal(formatCompactDuration(0), "0s");
+	assert.equal(formatCompactDuration(5), "5s");
+	assert.equal(formatCompactDuration(45), "45s");
+	assert.equal(formatCompactDuration(59), "59s");
+	assert.equal(formatCompactDuration(60), "1m");
+	assert.equal(formatCompactDuration(61), "1m1s");
+	assert.equal(formatCompactDuration(90), "1m30s");
+	assert.equal(formatCompactDuration(600), "10m");
+	assert.equal(formatCompactDuration(3600), "1h");
+	assert.equal(formatCompactDuration(3630), "1h30s");
+	assert.equal(formatCompactDuration(4830), "1h20m30s");
+	assert.equal(formatCompactDuration(7325), "2h2m5s");
 });
 
 test("renderTemplate：不认识的占位符被清空、不残留 &tN&", () => {
 	const text = renderTemplate("x&t9&y &t1& end", { t1: 5, t2: 0, t3: 0, t4: "" });
 	assert.doesNotMatch(text, /&t\d+&/);
-	assert.equal(text, "xy 5 end");
+	assert.equal(text, "xy 5s end");
 });
 
 test("renderTemplate：空模板返回空串", () => {
@@ -167,9 +206,10 @@ test("describePlan：没配置时给用法", () => {
 test("describePlan：挂起 / 剩余 / 已超时三种说法", () => {
 	const pending = createPlan({ t1: 30, t2: 300, t3: 60 }, { mode: "next", now: 0, turn: 0 });
 	assert.match(describePlan(pending, 0), /等待下一轮/);
+	assert.match(describePlan(pending, 0), /t1=30s，t2=5m，t3=1m/);
 
 	const active = createPlan({ t1: 30, t2: 300, t3: 60 }, { mode: "current", now: 0, turn: 2 });
-	assert.match(describePlan(active, 60000), /第 2 轮还剩 4m 00s/);
+	assert.match(describePlan(active, 60000), /第 2 轮还剩 4m/);
 
 	const zero3 = createPlan({ t1: 30, t2: 100, t3: 0 }, { mode: "current", now: 0, turn: 2 });
 	assert.match(describePlan(zero3, 150000), /已超过预期时间 50s/);

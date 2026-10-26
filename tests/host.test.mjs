@@ -232,7 +232,7 @@ if (!AVAILABLE) {
 		assert.equal(steered[0].source.kind, "dsh-clock");
 		assert.equal(steered[0].source.form, "notice");
 		assert.match(steered[0].content[0].text, /计时已生效/);
-		assert.match(steered[0].content[0].text, /300/, "&t2& 应被替换成 300");
+		assert.match(steered[0].content[0].text, /5m/, "&t2& 应被替换成紧凑时长 5m（300 秒）");
 		assert.doesNotMatch(steered[0].content[0].text, /&t\d+&/);
 	});
 

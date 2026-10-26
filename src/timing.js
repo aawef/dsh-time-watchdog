@@ -5,9 +5,10 @@
 //   2. 4 种提示词模板的默认值与占位符替换；
 //   3. 一次 pre-step 的排程决策（该不该提醒、提醒哪一档、下一个到期时刻）。
 //
-// 时间单位统一是「秒」，内部一律换算成毫秒。
+// 时间单位内部统一是「秒」，对外一律换算成毫秒。
+// 用户输入与提示词输出都支持紧凑时长写法（`1h20m30s`），见 parseDurationToken
+// 与 formatCompactDuration——两者必须互逆，否则「设进去的」和「说出来的」会不一致。
 
-import { formatDuration } from "./clock.js";
 
 /** 参数下限（秒）。0/负数没有意义。 */
 export const MIN_SECONDS = 1;
@@ -29,21 +30,24 @@ export const TEMPLATE_LABELS = {
 /**
  * 4 种提示词的默认模板。
  *
- * 占位符：`&t1&` `&t2&` `&t3&` 是本次配置的三个参数（秒），
+ * 占位符：`&t1&` `&t2&` `&t3&` 是本次配置的三个参数，
  * `&t4&` 是动态值——未超时是「还剩多久」，超时后是「已超时多久」。
  *
+ * 四个占位符都渲染成**带单位的紧凑时长**（`30s` / `1m30s` / `1h20m30s`），
+ * 所以模板里不要再写「&t2& 秒」——那会渲染成「1m30s 秒」。
+ *
  * 默认文案刻意不写死 t1/t3 的数值关系：t1>=t2 时第 ② 档会被整段跳过，
- * 模板里若声称「每隔 t1 秒提醒」就成了假话。
+ * 模板里若声称「每隔 t1 提醒」就成了假话。
  */
 export const DEFAULT_TEMPLATES = {
 	start:
-		"【计时已生效】本轮对话的预期工作时间为 &t2& 秒（约 &t2& 秒后到期）。" +
+		"【计时已生效】本轮对话的预期工作时间为 &t2&（约 &t2& 后到期）。" +
 		"请据此安排节奏，时间用尽前我会提醒你收尾。",
 	before:
-		"【时间提醒】本轮对话还剩 &t4&（预期总时长 &t2& 秒）。" +
+		"【时间提醒】本轮对话还剩 &t4&（预期总时长 &t2&）。" +
 		"请收拢目标，优先完成关键步骤，准备给出结论。",
 	firstOverdue:
-		"【已超时】本轮对话已超出预期时间 &t4&（预期 &t2& 秒）。" +
+		"【已超时】本轮对话已超出预期时间 &t4&（预期 &t2&）。" +
 		"请立即停止新增工作，马上收尾并输出结果。",
 	afterOverdue:
 		"【持续超时】本轮对话已超出预期时间 &t4&。请立刻结束当前工作，只给出最终结论。"
@@ -56,24 +60,80 @@ const PLACEHOLDER_PATTERN = /&t([1-9]\d*)&/g;
 const LEFTOVER_PATTERN = /&t[1-9]\d*&/g;
 
 /**
- * 把 `30` / `30s` / `2m` 解析成秒数。
+ * 把用户写的时长解析成秒数。
+ *
+ * 接受的写法（大小写不敏感，数字可带小数）：
+ *   `30`        → 30 秒（裸数字默认按秒）
+ *   `30s`       → 30 秒
+ *   `2m`        → 120 秒
+ *   `1h`        → 3600 秒
+ *   `1h20m30s`  → 4830 秒
+ *   `1h30s`     → 3630 秒（允许跳级）
+ *   `90m`       → 5400 秒（不限制单段上限）
+ *
+ * 顺序必须是 h → m → s，不允许 `30s20m` 这种倒序，也不允许重复同一单位。
+ *
  * @param {string} token - 单个参数
- * @returns {number | null} 秒数；无法解析或非整数时 null
+ * @returns {number | null} 秒数（四舍五入到整数）；无法解析时 null
  */
-function parseSecondsToken(token) {
-	const match = /^(\d+(?:\.\d+)?)\s*([sm]?)$/i.exec(token);
+function parseDurationToken(token) {
+	const text = String(token ?? "").trim();
+	if (text === "") return null;
+
+	// 裸数字：按秒处理。
+	if (/^\d+(?:\.\d+)?$/.test(text)) {
+		const bare = Number(text);
+		return Number.isFinite(bare) ? Math.round(bare) : null;
+	}
+
+	// 复合写法：必须从 h 开始、按 h→m→s 顺序，且至少有一段。
+	const match = /^(?:(\d+(?:\.\d+)?)h)?(?:(\d+(?:\.\d+)?)m)?(?:(\d+(?:\.\d+)?)s)?$/i.exec(text);
 	if (match === null) return null;
-	const value = Number(match[1]);
-	if (!Number.isFinite(value)) return null;
-	const unit = match[2].toLowerCase();
-	const seconds = unit === "m" ? value * 60 : value;
-	return Math.round(seconds);
+	const [, hours, minutes, seconds] = match;
+	if (hours === undefined && minutes === undefined && seconds === undefined) return null;
+
+	const total =
+		(hours === undefined ? 0 : Number(hours) * 3600) +
+		(minutes === undefined ? 0 : Number(minutes) * 60) +
+		(seconds === undefined ? 0 : Number(seconds));
+	if (!Number.isFinite(total)) return null;
+	return Math.round(total);
+}
+
+/**
+ * 把秒数格式化成紧凑时长，与 `parseDurationToken` 互逆。
+ *
+ * 规则（照需求「够小时/分钟量级就转，否则别转」）：
+ *   45     → `45s`
+ *   60     → `1m`
+ *   90     → `1m30s`
+ *   3600   → `1h`
+ *   3630   → `1h30s`
+ *   4830   → `1h20m30s`
+ *
+ * 不足一分钟只给秒；中间为 0 的段直接省略，不写 `1h0m30s`。
+ *
+ * @param {number} totalSeconds - 秒数
+ * @returns {string}
+ */
+export function formatCompactDuration(totalSeconds) {
+	let seconds = Math.max(0, Math.round(Number(totalSeconds) || 0));
+	const hours = Math.floor(seconds / 3600);
+	seconds %= 3600;
+	const minutes = Math.floor(seconds / 60);
+	seconds %= 60;
+	if (hours > 0) {
+		const rest = minutes > 0 ? `${minutes}m${seconds > 0 ? `${seconds}s` : ""}` : seconds > 0 ? `${seconds}s` : "";
+		return `${hours}h${rest}`;
+	}
+	if (minutes > 0) return seconds > 0 ? `${minutes}m${seconds}s` : `${minutes}m`;
+	return `${seconds}s`;
 }
 
 /**
  * 解析 `/set-time` 的原始参数。
  *
- * 用法：`/set-time <t1> <t2> <t3>`，单位秒，可写 `30`、`30s`、`2m`。
+ * 用法：`/set-time <t1> <t2> <t3>`，每段可写 `30`、`30s`、`2m`、`1h20m30s`。
  *   t1：到 t2 之前，每隔 t1 提醒一次
  *   t2：预期可工作时间（进行中的对话从「指令发出时刻」起算）
  *   t3：超过 t2 后，每隔 t3 提醒一次；t3 <= 0 表示关掉这一档
@@ -93,17 +153,17 @@ export function parseSetTime(rawInput) {
 	if (tokens.length !== 3) {
 		return {
 			action: "error",
-			message: `需要 3 个参数，收到 ${tokens.length} 个。用法：/set-time <t1> <t2> <t3>，单位秒，例如 /set-time 30 300 60。`
+			message: `需要 3 个参数，收到 ${tokens.length} 个。用法：/set-time <t1> <t2> <t3>，例如 /set-time 30s 5m 1m，或 /set-time 10s 1h20m30s 2m。`
 		};
 	}
 
-	const values = tokens.map((token) => parseSecondsToken(token));
+	const values = tokens.map((token) => parseDurationToken(token));
 	const names = ["t1", "t2", "t3"];
 	for (let index = 0; index < 3; index += 1) {
 		if (values[index] === null) {
 			return {
 				action: "error",
-				message: `${names[index]} 无法识别 "${tokens[index]}"。只接受秒数，可带 s/m 后缀，例如 30、30s、2m。`
+				message: `${names[index]} 无法识别 "${tokens[index]}"。可写 30、30s、2m、1h20m30s（顺序必须是 h→m→s）。`
 			};
 		}
 	}
@@ -113,13 +173,16 @@ export function parseSetTime(rawInput) {
 		if (value < MIN_SECONDS || value > MAX_SECONDS) {
 			return {
 				action: "error",
-				message: `${name} 要在 ${MIN_SECONDS}–${MAX_SECONDS} 秒之间，收到 ${value} 秒。`
+				message: `${name} 要在 ${MIN_SECONDS}–${MAX_SECONDS} 秒之间，收到 ${formatCompactDuration(value)}（${value} 秒）。`
 			};
 		}
 	}
 	// t3 允许非正数：含义是「关掉超时后周期提醒」，不是错误。
 	if (t3 > MAX_SECONDS) {
-		return { action: "error", message: `t3 不能超过 ${MAX_SECONDS} 秒，收到 ${t3} 秒。` };
+		return {
+			action: "error",
+			message: `t3 不能超过 ${MAX_SECONDS} 秒，收到 ${formatCompactDuration(t3)}（${t3} 秒）。`
+		};
 	}
 
 	return { action: "set", t1, t2, t3 };
@@ -128,9 +191,9 @@ export function parseSetTime(rawInput) {
 /**
  * 把模板里的占位符替换成实际值。
  *
- * `&t1&` `&t2&` `&t3&` 直接是秒数文本；`&t4&` 是格式化后的时长
- * （未超时=剩余，超时后=已超时）。渲染完再扫一遍残留占位符并清空，
- * 保证「不能残留占位符」这条要求在任何模板内容下都成立。
+ * `&t1&` `&t2&` `&t3&` 渲染成紧凑时长（`30s` / `1m30s` / `1h20m30s`），
+ * `&t4&` 是动态时长（未超时=剩余，超时后=已超时），格式相同。
+ * 渲染完再扫一遍残留占位符并清空，保证「不能残留占位符」这条要求在任何模板内容下都成立。
  *
  * @param {string} template - 模板原文
  * @param {{t1: number, t2: number, t3: number, t4?: string}} values - 替换值
@@ -140,9 +203,9 @@ export function renderTemplate(template, values) {
 	const text = String(template ?? "");
 	if (text === "") return "";
 	const table = {
-		1: String(values.t1),
-		2: String(values.t2),
-		3: String(values.t3),
+		1: formatCompactDuration(values.t1),
+		2: formatCompactDuration(values.t2),
+		3: formatCompactDuration(values.t3),
 		4: values.t4 ?? ""
 	};
 	const rendered = text.replace(PLACEHOLDER_PATTERN, (whole, key) => {
@@ -161,8 +224,8 @@ export function renderTemplate(template, values) {
  */
 export function templateT4(phase, deadline, now) {
 	if (phase === "start") return "";
-	if (phase === "before") return formatDuration(Math.max(0, deadline - now));
-	return formatDuration(Math.max(0, now - deadline));
+	const remaining = phase === "before";
+	return formatCompactDuration(Math.max(0, (remaining ? deadline - now : now - deadline) / 1000));
 }
 
 /**
@@ -281,14 +344,14 @@ export function stepPlan(plan, now) {
  */
 export function describePlan(plan, now) {
 	if (plan === null || plan === undefined) {
-		return "当前没有生效中的计时。用法：/set-time <t1> <t2> <t3>，单位秒，例如 /set-time 30 300 60。";
+		return "当前没有生效中的计时。用法：/set-time <t1> <t2> <t3>，例如 /set-time 30s 5m 1m。";
 	}
-	const base = `t1=${plan.t1} 秒，t2=${plan.t2} 秒，t3=${plan.t3 > 0 ? `${plan.t3} 秒` : "已关闭（不重复提醒）"}`;
+	const base = `t1=${formatCompactDuration(plan.t1)}，t2=${formatCompactDuration(plan.t2)}，t3=${plan.t3 > 0 ? formatCompactDuration(plan.t3) : "已关闭（不重复提醒）"}`;
 	if (plan.pending === true) return `${base}。等待下一轮对话开始时生效。`;
 	if (now >= plan.deadline) {
-		return `${base}。已超过预期时间 ${formatDuration(now - plan.deadline)}（第 ${plan.turn} 轮）。`;
+		return `${base}。已超过预期时间 ${formatCompactDuration((now - plan.deadline) / 1000)}（第 ${plan.turn} 轮）。`;
 	}
-	return `${base}。第 ${plan.turn} 轮还剩 ${formatDuration(plan.deadline - now)}。`;
+	return `${base}。第 ${plan.turn} 轮还剩 ${formatCompactDuration((plan.deadline - now) / 1000)}。`;
 }
 
 /**

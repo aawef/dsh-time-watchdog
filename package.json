@@ -1,6 +1,6 @@
 {
   "name": "dsh-clock",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "给 DSH 加一只时钟：记录本轮对话从 turn/start 起已经运行多久（clock_elapsed 工具），按 /set-time 的三段式排程在本步之前注入收尾提示词，并支持提醒卡片与设置页自定义模板。",
   "type": "module",
   "main": "lib/index.js",
