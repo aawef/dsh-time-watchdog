@@ -17,7 +17,8 @@ test("初始状态：没有轮次、没有起点", () => {
 		turnStartedAt: null,
 		lastTurnElapsedMs: null,
 		injectSeq: 0,
-		lastInjectionAt: null
+		lastInjectionAt: null,
+		lastNoticeText: null
 	});
 });
 
@@ -32,7 +33,8 @@ test("turn/start 记录起点与轮次", () => {
 		turnStartedAt: 1000,
 		lastTurnElapsedMs: null,
 		injectSeq: 0,
-		lastInjectionAt: null
+		lastInjectionAt: null,
+		lastNoticeText: null
 	});
 });
 
@@ -80,7 +82,8 @@ test("turn/end 结算耗时并清空起点", () => {
 		turnStartedAt: null,
 		lastTurnElapsedMs: 60000,
 		injectSeq: 0,
-		lastInjectionAt: null
+		lastInjectionAt: null,
+		lastNoticeText: null
 	});
 });
 

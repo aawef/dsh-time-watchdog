@@ -74,9 +74,15 @@ export function describeConfig(config) {
 export const DEFAULT_TOAST_ON_PROMPT = true;
 
 /**
+ * 「提示词 Toast 是否显示正文」的开关默认值。
+ * 默认关闭：卡片只写「提示词已发送」，不占屏幕。
+ */
+export const DEFAULT_TOAST_DETAIL = false;
+
+/**
  * 从持久化载荷里恢复设置，任何脏数据都退回默认值。
  * @param {unknown} payload - 读到的 JSON
- * @returns {{intervalSeconds: number | null, toastOnPrompt: boolean, templates: object}}
+ * @returns {{intervalSeconds: number | null, toastOnPrompt: boolean, toastDetail: boolean, templates: object}}
  */
 export function readConfig(payload) {
 	const raw = payload?.intervalSeconds;
@@ -86,9 +92,12 @@ export function readConfig(payload) {
 			: null;
 	const toastOnPrompt =
 		typeof payload?.toastOnPrompt === "boolean" ? payload.toastOnPrompt : DEFAULT_TOAST_ON_PROMPT;
+	const toastDetail =
+		typeof payload?.toastDetail === "boolean" ? payload.toastDetail : DEFAULT_TOAST_DETAIL;
 	return {
 		intervalSeconds,
 		toastOnPrompt,
+		toastDetail,
 		templates: normalizeTemplates(payload?.templates)
 	};
 }

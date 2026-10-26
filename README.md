@@ -109,7 +109,7 @@
 | 卡片 | 触发 | 内容 |
 | --- | --- | --- |
 | 已运行 | 本轮进行中，每 `/clock` 秒 | 本轮对话已运行 `Xm Ys`（+ 第 N 轮） |
-| 已发送 | 宿主每注入一条提醒（投影 `injectSeq` +1） | 「提示词已发送」，可在设置页关掉 |
+| 已发送 | 宿主每注入一条提醒（投影 `injectSeq` +1） | 「提示词已发送」；在设置页打开「显示详细内容」后，卡片里还会带上本条提示词的正文 |
 
 两张都停留 5 秒（`HOLD_MS`）后消失。
 
@@ -146,7 +146,8 @@
 
 - 编辑 4 种提示词模板，改动即时保存
 - 「恢复默认模板」把四个文本框填回默认值（仍需点保存）
-- 「发送提示词时显示 Toast」开关
+- 「发送提示词时显示 Toast」开关（关掉后不弹卡片，注入与计时逻辑不受影响）
+- 「在『提示词已发送』卡片里显示详细内容」开关（默认关；开了就带上本条提示词正文）
 - 说明区列出 `/set-time` 的参数语义与「只对一轮生效」的规则
 
 ### 占位符
@@ -167,7 +168,7 @@
 
 | 方法 | 行为 |
 | --- | --- |
-| `GET` / `POST` | 返回 `{ ok, intervalSeconds, toastOnPrompt, templates, defaults, templateKeys }` |
+| `GET` / `POST` | 返回 `{ ok, intervalSeconds, toastOnPrompt, toastDetail, templates, defaults, templateKeys }` |
 | `PUT` | 局部更新（body 里给哪些字段就改哪些），返回更新后的完整配置 |
 
 `webServer` 缺席（CLI / 无 UI 组合）时端点不注册，插件其余功能照常。
@@ -206,6 +207,7 @@ pnpm install
 {
   "intervalSeconds": 30,
   "toastOnPrompt": true,
+  "toastDetail": false,
   "templates": {
     "start": "…",
     "before": "…",
@@ -215,7 +217,7 @@ pnpm install
 }
 ```
 
-`intervalSeconds: null` = 周期卡片关闭。文件坏了/读不到时一律退回默认值，不影响插件加载。
+`intervalSeconds: null` = 周期卡片关闭；`toastDetail: true` = 「已发送」卡片带正文。文件坏了/读不到时一律退回默认值，不影响插件加载。
 设置页保存时会写全四个模板，所以文件里看到的一定是完整形状。
 
 ## 测试

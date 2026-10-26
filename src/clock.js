@@ -7,7 +7,7 @@
 export const PROJECTION_KEY = "clock";
 
 /** 折叠单元的版本。改了 state 形状必须 +1，否则同 key 共存会冲突。 */
-export const STATE_VERSION = 2;
+export const STATE_VERSION = 3;
 
 /**
  * 提醒消息的来源标记。客户端与宿主都靠它区分「自己注入的隐藏提示」
@@ -23,7 +23,8 @@ export const NOTICE_SOURCE_KIND = "dsh-clock";
  *   turnStartedAt: number | null,
  *   lastTurnElapsedMs: number | null,
  *   injectSeq: number,
- *   lastInjectionAt: number | null
+ *   lastInjectionAt: number | null,
+ *   lastNoticeText: string | null
  * }}
  */
 export function createInitialState() {
@@ -37,7 +38,13 @@ export function createInitialState() {
 		/** 已注入的提醒条数，客户端靠它变化弹「提示词已发送」。 */
 		injectSeq: 0,
 		/** 最后一条提醒的注入时刻。 */
-		lastInjectionAt: null
+		lastInjectionAt: null,
+		/**
+		 * 最后一条提醒的正文。给客户端「详细模式」的卡片用——
+		 * 客户端拿不到宿主内存，只能靠投影把这段文字带下去。
+		 * 只留最后一条：卡片只显示最新那一次，留历史没有意义还会把投影撑大。
+		 */
+		lastNoticeText: null
 	};
 }
 
@@ -73,12 +80,34 @@ export function applyEvent(state, event) {
 			return {
 				...state,
 				injectSeq: state.injectSeq + 1,
-				lastInjectionAt: event.time
+				lastInjectionAt: event.time,
+				lastNoticeText: extractNoticeText(event.data)
 			};
 		}
 		default:
 			return state;
 	}
+}
+
+/**
+ * 从一条 user/message 里取出可以展示给用户的纯文本。
+ *
+ * 消息的 `content` 是分块数组（本插件只发一个 text 块），但为了不假设形状，
+ * 这里挑所有 `type === "text"` 的块拼起来。取不到就返回 null，
+ * 客户端据此退化成「不显示详情」而不是显示 `undefined`。
+ *
+ * @param {any} data - user/message 的 event.data
+ * @returns {string | null}
+ */
+function extractNoticeText(data) {
+	const content = data?.content;
+	if (!Array.isArray(content)) return null;
+	const parts = [];
+	for (const block of content) {
+		if (block?.type === "text" && typeof block.text === "string") parts.push(block.text);
+	}
+	const text = parts.join(String.fromCharCode(10, 10)).trim();
+	return text === "" ? null : text;
 }
 
 /**

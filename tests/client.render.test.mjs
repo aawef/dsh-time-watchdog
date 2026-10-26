@@ -345,6 +345,89 @@ test("已发送卡片：设置页关掉开关后不弹", async () => {
 	assert.equal(harness.html(), "");
 });
 
+test("已发送卡片：详细开关关闭时只显示简写，不带正文", async () => {
+	const harness = installComponent(await createHarness());
+	harness.setFetched({ ok: true, intervalSeconds: null, toastOnPrompt: true, toastDetail: false });
+	harness.projection.current = { turn: 1, turnStartedAt: null, lastTurnElapsedMs: 0, injectSeq: 0 };
+	harness.flush();
+	await harness.settle();
+	harness.flush();
+
+	harness.projection.current = {
+		turn: 1,
+		turnStartedAt: null,
+		lastTurnElapsedMs: 0,
+		injectSeq: 1,
+		lastNoticeText: "收尾提示词第八版"
+	};
+	harness.clock.now += 500;
+	harness.rerender();
+	assert.match(harness.html(), /提示词已发送/);
+	assert.doesNotMatch(harness.html(), /收尾提示词第八版/);
+});
+
+test("已发送卡片：详细开关打开后显示本条提示词正文", async () => {
+	const harness = installComponent(await createHarness());
+	harness.setFetched({ ok: true, intervalSeconds: null, toastOnPrompt: true, toastDetail: true });
+	harness.projection.current = { turn: 1, turnStartedAt: null, lastTurnElapsedMs: 0, injectSeq: 0 };
+	harness.flush();
+	await harness.settle();
+	harness.flush();
+
+	harness.projection.current = {
+		turn: 1,
+		turnStartedAt: null,
+		lastTurnElapsedMs: 0,
+		injectSeq: 1,
+		lastNoticeText: "收尾提示词第八版"
+	};
+	harness.clock.now += 500;
+	harness.rerender();
+	assert.match(harness.html(), /提示词已发送/);
+	assert.match(harness.html(), /收尾提示词第八版/);
+});
+
+test("已发送卡片：切换详细开关不需要重弹，下一次注入即生效", async () => {
+	const harness = installComponent(await createHarness());
+	harness.setFetched({ ok: true, intervalSeconds: null, toastOnPrompt: true, toastDetail: false });
+	harness.projection.current = { turn: 1, turnStartedAt: null, lastTurnElapsedMs: 0, injectSeq: 0 };
+	harness.flush();
+	await harness.settle();
+	harness.flush();
+
+	harness.projection.current = {
+		turn: 1,
+		turnStartedAt: null,
+		lastTurnElapsedMs: 0,
+		injectSeq: 1,
+		lastNoticeText: "第一条"
+	};
+	harness.clock.now += 500;
+	harness.rerender();
+	assert.doesNotMatch(harness.html(), /第一条/);
+
+	// 5 秒后撤卡
+	harness.clock.now += 5_000;
+	harness.tick();
+	assert.equal(harness.html(), "");
+
+	// 用户这时才在设置页打开详细开关（靠轮询同步，不用刷新）
+	harness.setFetched({ ok: true, intervalSeconds: null, toastOnPrompt: true, toastDetail: true });
+	await harness.settle();
+	harness.flush();
+
+	harness.projection.current = {
+		turn: 1,
+		turnStartedAt: null,
+		lastTurnElapsedMs: 0,
+		injectSeq: 2,
+		lastNoticeText: "第二条"
+	};
+	harness.clock.now += 500;
+	harness.rerender();
+	assert.match(harness.html(), /第二条/);
+});
+
 test("已发送卡片：页面刷新后 injectSeq 已有值也不补弹", async () => {
 	const harness = installComponent(await createHarness());
 	harness.setFetched({ ok: true, intervalSeconds: null, toastOnPrompt: true });

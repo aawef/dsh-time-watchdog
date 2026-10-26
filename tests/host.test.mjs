@@ -130,7 +130,7 @@ if (!AVAILABLE) {
 		plugin.apply(ctx);
 		assert.equal(record.projections.length, 1, "应注册一个投影");
 		assert.equal(record.projections[0].key, "clock");
-		assert.equal(record.projections[0].stateVersion, 2);
+		assert.equal(record.projections[0].stateVersion, 3);
 		assert.ok(typeof record.projections[0].wire?.view === "function", "必须有 wire 块，否则客户端读不到");
 
 		assert.equal(record.tools.length, 1);
