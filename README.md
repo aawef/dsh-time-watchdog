@@ -229,5 +229,5 @@ node --test "tests/*.test.mjs" "tests/*.mjs"
 `@deepseek-ai/dsh-llm` 与 `dsh-tools`（只在 profile 的 node_modules 下成立），
 解析不到时整组 skip 而不是报错。
 
-当前共 **66 条**（源目录 55 条 + host 12 条中 11 条因宿主包不可解析而跳过的对应关系：
-源目录跑 55 条含 1 条 skip；安装副本跑满 66 条）。
+当前共 **71 条**：安装副本（`~/.dsh/profiles/desktop/node_modules/dsh-clock`）跑满 71 条全绿；
+源目录跑 60 条（59 pass + 1 skip），差额都是 `host.test.mjs` 需要宿主包的那部分。
