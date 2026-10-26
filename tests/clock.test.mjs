@@ -59,10 +59,15 @@ test("本插件注入的提醒累加 injectSeq 并记时刻", () => {
 	const once = applyEvent(state, {
 		type: "user/message",
 		time: 2000,
-		data: { source: { kind: "dsh-clock", form: "notice" } }
+		data: {
+			source: { kind: "dsh-clock", form: "notice" },
+			content: [{ type: "text", text: "请尽快收尾。" }]
+		}
 	});
 	assert.equal(once.injectSeq, 1);
 	assert.equal(once.lastInjectionAt, 2000);
+	// 正文留给「详细模式」的卡片显示。
+	assert.equal(once.lastNoticeText, "请尽快收尾。");
 	const twice = applyEvent(once, {
 		type: "user/message",
 		time: 3000,
@@ -70,6 +75,47 @@ test("本插件注入的提醒累加 injectSeq 并记时刻", () => {
 	});
 	assert.equal(twice.injectSeq, 2);
 	assert.equal(twice.lastInjectionAt, 3000);
+});
+
+test("lastNoticeText：没有 content 或没有 text 块时退化为 null", () => {
+	const state = applyEvent(createInitialState(), { type: "turn/start", time: 1000, data: { turn: 1 } });
+	const noContent = applyEvent(state, {
+		type: "user/message",
+		time: 2000,
+		data: { source: { kind: "dsh-clock", form: "notice" } }
+	});
+	assert.equal(noContent.lastNoticeText, null, "取不到正文时不能是 undefined 或空串");
+
+	const noText = applyEvent(state, {
+		type: "user/message",
+		time: 2000,
+		data: { source: { kind: "dsh-clock", form: "notice" }, content: [{ type: "image" }] }
+	});
+	assert.equal(noText.lastNoticeText, null);
+
+	const blank = applyEvent(state, {
+		type: "user/message",
+		time: 2000,
+		data: { source: { kind: "dsh-clock", form: "notice" }, content: [{ type: "text", text: "   " }] }
+	});
+	assert.equal(blank.lastNoticeText, null, "只有空白也算没内容");
+});
+
+test("lastNoticeText：多个 text 块按空行拼接", () => {
+	const state = applyEvent(createInitialState(), { type: "turn/start", time: 1000, data: { turn: 1 } });
+	const injected = applyEvent(state, {
+		type: "user/message",
+		time: 2000,
+		data: {
+			source: { kind: "dsh-clock", form: "notice" },
+			content: [
+				{ type: "text", text: "第一段" },
+				{ type: "image" },
+				{ type: "text", text: "第二段" }
+			]
+		}
+	});
+	assert.equal(injected.lastNoticeText, ["第一段", "", "第二段"].join("\n"));
 });
 
 test("turn/end 结算耗时并清空起点", () => {
