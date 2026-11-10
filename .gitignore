@@ -1,3 +1,10 @@
 node_modules/
 *.log
 package-lock.json
+
+
+# 本地调试与临时产物（不属于发布内容）
+临时脚本/
+.local/
+undefined/
+%SystemDrive%/
