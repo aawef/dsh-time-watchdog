@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Time watchdog",
+    "description": "Records how long the current turn has been running, exposes it as the clock_elapsed tool, and injects wrap-up reminders on the /set-time schedule."
+  }
+}

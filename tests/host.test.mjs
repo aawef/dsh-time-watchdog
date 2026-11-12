@@ -65,16 +65,25 @@ function createCtx() {
 			}
 		},
 		sessionProjections: {
-			register(definition) {
+			// 真宿主的 register 返回 Promise<ProjectionHandle>，读走 handle.stateOf。
+			// 桩也照这个形状来，否则测不出「注册未 await」这类缺陷。
+			async register(definition) {
 				record.projections.push(definition);
-				return () => {};
-			},
-			stateOf(session, key) {
-				const definition = record.projections.find((entry) => entry.key === key);
-				if (definition === undefined) return undefined;
-				let state = definition.init();
-				for (const event of session.events) state = definition.apply(state, event);
-				return state;
+				const handle = {
+					stateOf(session) {
+						const found = record.projections.find((entry) => entry.key === definition.key);
+						if (found === undefined) return undefined;
+						let state = found.init();
+						for (const event of session.events) state = found.apply(state, event);
+						return state;
+					},
+					readerFor(session) {
+						return () => this.stateOf(session);
+					},
+					async dispose() {}
+				};
+				record.projectionHandle = handle;
+				return handle;
 			}
 		},
 		commands: {
@@ -82,6 +91,12 @@ function createCtx() {
 				record.commands.push(definition);
 				return () => {};
 			}
+		},
+		effect(execute) {
+			// 真宿主：thunk 立刻执行，返回值作为 disposer 收进 fiber。
+			const dispose = execute();
+			record.effects.push(dispose);
+			return () => {};
 		},
 		on(name, listener) {
 			const list = record.listeners.get(name) ?? [];
@@ -125,9 +140,9 @@ if (!AVAILABLE) {
 	test("宿主包不可解析：跳过集成测试", { skip: "需要 @deepseek-ai/dsh-llm 与 dsh-tools" }, () => {});
 } else {
 	const plugin = await import("../lib/index.js");
-	test("apply() 注册了折叠单元 / 工具 / 两条命令 / pre-step", () => {
+	test("apply() 注册了折叠单元 / 工具 / 两条命令 / pre-step", async () => {
 		const { ctx, record } = createCtx();
-		plugin.apply(ctx);
+		await plugin.apply(ctx);
 		assert.equal(record.projections.length, 1, "应注册一个投影");
 		assert.equal(record.projections[0].key, "watchdog");
 		assert.equal(record.projections[0].stateVersion, 3);
@@ -146,30 +161,31 @@ if (!AVAILABLE) {
 		assert.ok((record.listeners.get("session/event") ?? []).length === 1, "应监听 session/event");
 	});
 
-	test("wire.view 把 state 原样暴露给客户端", () => {
+	test("wire.view 把 state 原样暴露给客户端", async () => {
 		const { ctx, record } = createCtx();
-		plugin.apply(ctx);
+		await plugin.apply(ctx);
 		const definition = record.projections[0];
 		const state = definition.init();
 		const view = definition.wire.view(state);
 		assert.deepEqual(Object.keys(view).sort(), Object.keys(state).sort());
 	});
 
-	test("折叠：turn/start 记起点，turn/end 结算", () => {
+	test("折叠：turn/start 记起点，turn/end 结算", async () => {
 		const { ctx, record } = createCtx();
-		plugin.apply(ctx);
+		await plugin.apply(ctx);
 		const session = createSession("s-fold");
+		const handle = await record.projectionHandle;
 		emit(record, session, { type: "turn/start", time: 1000, data: { turn: 1 } });
-		assert.equal(ctx.sessionProjections.stateOf(session, "watchdog").turnStartedAt, 1000);
+		assert.equal(handle.stateOf(session).turnStartedAt, 1000);
 		emit(record, session, { type: "turn/end", time: 5000, data: { turn: 1 } });
-		const state = ctx.sessionProjections.stateOf(session, "watchdog");
+		const state = handle.stateOf(session);
 		assert.equal(state.turnStartedAt, null);
 		assert.equal(state.lastTurnElapsedMs, 4000);
 	});
 
 	test("工具：读到本轮已用时间", async () => {
 		const { ctx, record } = createCtx();
-		plugin.apply(ctx);
+		await plugin.apply(ctx);
 		const session = createSession("s-tool");
 		const now = Date.now();
 		emit(record, session, { type: "turn/start", time: now - 3000, data: { turn: 4 } });
@@ -181,9 +197,9 @@ if (!AVAILABLE) {
 		assert.match(value.elapsedText, /^\d+s$/);
 	});
 
-	test("/set-time：无参数是查询", () => {
+	test("/set-time：无参数是查询", async () => {
 		const { ctx, record } = createCtx();
-		plugin.apply(ctx);
+		await plugin.apply(ctx);
 		const command = record.commands.find((c) => c.name === "set-time");
 		const session = createSession("s-query");
 		const result = command.handler({ rawInput: "", agent: { session } });
@@ -191,18 +207,18 @@ if (!AVAILABLE) {
 		assert.match(result.text, /当前没有生效中的计时/);
 	});
 
-	test("/set-time：参数错误给具体字段", () => {
+	test("/set-time：参数错误给具体字段", async () => {
 		const { ctx, record } = createCtx();
-		plugin.apply(ctx);
+		await plugin.apply(ctx);
 		const command = record.commands.find((c) => c.name === "set-time");
 		const result = command.handler({ rawInput: "30 abc", agent: { session: createSession("s-err") } });
 		assert.equal(result.kind, "error");
 		assert.match(result.text, /需要 3 个参数/);
 	});
 
-	test("/set-time：没有进行中的对话时挂给下一轮，且不会被 turn/end 清掉", () => {
+	test("/set-time：没有进行中的对话时挂给下一轮，且不会被 turn/end 清掉", async () => {
 		const { ctx, record } = createCtx();
-		plugin.apply(ctx);
+		await plugin.apply(ctx);
 		const command = record.commands.find((c) => c.name === "set-time");
 		const session = createSession("s-pending");
 		const result = command.handler({ rawInput: "30 300 60", agent: { session } });
@@ -217,7 +233,7 @@ if (!AVAILABLE) {
 
 	test("/set-time：有进行中的对话时立即注入开始提示词（source.kind 为 dsh-time-watchdog）", async () => {
 		const { ctx, record } = createCtx();
-		plugin.apply(ctx);
+		await plugin.apply(ctx);
 		const command = record.commands.find((c) => c.name === "set-time");
 		const session = createSession("s-live");
 		emit(record, session, { type: "turn/start", time: Date.now() - 1000, data: { turn: 2 } });
@@ -238,7 +254,7 @@ if (!AVAILABLE) {
 
 	test("pre-step：t1 到期后注入一条未超时提醒，且按 t1 限频", async () => {
 		const { ctx, record } = createCtx();
-		plugin.apply(ctx);
+		await plugin.apply(ctx);
 		const command = record.commands.find((c) => c.name === "set-time");
 		const session = createSession("s-sched");
 		emit(record, session, { type: "turn/start", time: Date.now() - 5000, data: { turn: 1 } });
@@ -267,7 +283,7 @@ if (!AVAILABLE) {
 
 	test("pre-step：turn 结束后不再提醒", async () => {
 		const { ctx, record } = createCtx();
-		plugin.apply(ctx);
+		await plugin.apply(ctx);
 		const command = record.commands.find((c) => c.name === "set-time");
 		const session = createSession("s-ended");
 		emit(record, session, { type: "turn/start", time: Date.now() - 31000, data: { turn: 1 } });
@@ -281,7 +297,7 @@ if (!AVAILABLE) {
 
 	test("pre-step：reject 决策原样透传", async () => {
 		const { ctx, record } = createCtx();
-		plugin.apply(ctx);
+		await plugin.apply(ctx);
 		const session = createSession("s-reject");
 		const agent = { session, steer: () => {} };
 		// 手动替换下游：让 pre-step 链返回 reject
@@ -293,12 +309,58 @@ if (!AVAILABLE) {
 		assert.equal(out.kind, "reject");
 	});
 
-	test("投影的 stateSchema 与 wire.viewSchema 都接受 init 出来的状态", () => {
+	test("投影的 stateSchema 与 wire.viewSchema 都接受 init 出来的状态", async () => {
 		const { ctx, record } = createCtx();
-		plugin.apply(ctx);
+		await plugin.apply(ctx);
 		const definition = record.projections[0];
 		const state = definition.init();
 		assert.doesNotThrow(() => definition.stateSchema.parse(state));
 		assert.doesNotThrow(() => definition.wire.viewSchema.parse(definition.wire.view(state)));
+	});
+
+	// 回归：wire.summary 必须显式 false。宿主实现是 `wire.summary !== false`（默认 true），
+	// 而 lastNoticeText 是渲染后的完整提示词正文——开着会把用户可编辑的模板全文
+	// 随每个 Session summary 推给客户端。
+	test("wire.summary 显式为 false（提示词正文不进会话摘要）", async () => {
+		const { ctx, record } = createCtx();
+		await plugin.apply(ctx);
+		assert.equal(record.projections[0].wire.summary, false);
+	});
+
+	// 回归：pending 计划原先没有任何删除路径（turn/end 刻意跳过它），
+	// 会话销毁后仍留在表里，resume 同一 id 时会被 armPlan 复活成陈旧提醒。
+	test("session/disposed 清掉该会话的计划，resume 后不再复活", async () => {
+		const { ctx, record } = createCtx();
+		await plugin.apply(ctx);
+		const command = record.commands.find((c) => c.name === "set-time");
+		const session = createSession("s-disposed");
+
+		// 无进行中的对话 → 落一条 pending 计划
+		command.handler({ rawInput: "30 300 60", agent: { session } });
+		assert.match(command.handler({ rawInput: "", agent: { session } }).text, /等待下一轮/);
+
+		// 会话销毁：计划必须被删掉
+		for (const listener of record.listeners.get("session/disposed") ?? []) listener(session);
+		assert.match(
+			command.handler({ rawInput: "", agent: { session } }).text,
+			/当前没有生效中的计时/,
+			"session/disposed 后不该还留着计划"
+		);
+
+		// resume 同一 id：turn/start 不得把陈旧计划激活成提醒
+		const agent = { session, steer: () => {} };
+		emit(record, session, { type: "turn/start", time: Date.now(), data: { turn: 1 } });
+		const decision = await runPreStep(record, agent);
+		assert.equal(decision.messages.length, 0, "已销毁的计划不得在 resume 后复活");
+	});
+
+	// 回归：拿不到 session id 时不能退化成空串键（会让多个会话共用同一份计划）。
+	test("/set-time：没有 session id 时拒绝设定，不落空串键", async () => {
+		const { ctx, record } = createCtx();
+		await plugin.apply(ctx);
+		const command = record.commands.find((c) => c.name === "set-time");
+		const result = command.handler({ rawInput: "30 300 60", agent: {} });
+		assert.equal(result.kind, "error");
+		assert.match(result.text, /没有可识别的会话/);
 	});
 }

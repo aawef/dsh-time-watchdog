@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "计时看门狗",
+    "description": "记录本轮对话已运行多久，通过 clock_elapsed 工具随时读取，并按 /set-time 的三段式排程在每步之前注入收尾提示词。"
+  }
+}

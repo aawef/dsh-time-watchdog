@@ -1,5 +1,89 @@
 # CHANGELOG
 
+## 1.0.1 — 2026-11-12 生命周期与安全加固（Cordis 所有权审计）
+
+一轮针对宿主侧所有权与生命周期的专项审计，修的是「注册写对了、释放没做全」这一类
+慢性缺陷。功能行为不变，改动集中在资源的取得与回收。
+
+### 修复
+
+- **投影注册改用 handle（`lib/index.js`）**：`ctx.sessionProjections.register()` 的
+  返回值原先是直接丢掉的，随后又用 service 级的 `stateOf(session, key)` 读数。
+  按 `dsh-session-projection` 的契约，`register()` 返回 `Promise<ProjectionHandle>`，
+  文档明写「Callers must await registration before publishing consumers」，而
+  service 级 `stateOf` 已标 `@deprecated`（首次读会往日志吐一条废弃警告）。
+  现在 `apply` 改为 async，`await` 注册拿到 handle，三处读数全部走
+  `handle.stateOf(session)`。
+
+- **`plans` 移出模块作用域**：原先 `const plans = new Map()` 在模块顶层，按 sessionId
+  存计时计划。模块级 Map 的身份来自模块加载而非任何 fiber，于是插件重载后新旧实例
+  共用同一张表，旧 fiber 卸载时条目仍在。现在由 `apply` 创建，并用
+  `ctx.effect(() => () => plans.clear())` 兜底释放。
+
+- **补 `session/disposed` 清理（真泄漏）**：原先只有 `turn/end` 删非 pending 计划，
+  而 pending 计划（`/set-time` 后还没开新轮的那种）被刻意保护成「必须活过 turn/end」，
+  于是**没有任何路径删除它**。会话销毁后计划留在内存里，长跑进程按会话数无界增长。
+  更实际的问题是语义复活：会话日后 resume（保留同一 id）时，`turn/start` 会把这条
+  陈旧计划 `armPlan` 激活，按旧的 t2/t3 在恢复后的第一轮里周期性注入「已超时」提醒，
+  而用户从没在本轮设定过。现在监听 `session/disposed` 删除对应计划。
+
+- **`sessionKey` 空串回退导致串号**：`session?.id ?? ""` 让拿不到 session 的调用全部
+  落到同一个 `""` 键上，多个来源共用一份计划。现在无 id 时直接拒绝设定计时
+  （`/set-time` 返回错误提示），调度与 turn 跟踪也跳过空键。
+
+- **`wire` 显式 `summary: false`**：宿主实现是 `summary: wire.summary !== false`，
+  **默认 true**。`lastNoticeText` 存的是渲染后的**完整提示词正文**，而模板是用户可
+  编辑的——开着等于把整段模板正文随每个 Session summary 推给客户端，既撑大 payload，
+  又把本该瞬态的 UI 状态固化进摘要。
+
+- **HTTP 端点接入来源校验**：handler 原先从不看 headers，`PUT` 直接写盘。webServer
+  本身只做路由匹配、不做任何 Host/Origin 检查，这道防线在 `ctx.connection` 上。
+  现在 `inject` 加 `connection`，handler 首行调 `requestRejection({ headers })`，
+  返回 401/403 即拒。实际风险：任意外部页面可 `fetch(..., {method:'PUT',
+  mode:'no-cors', body:'…'})` 以 text/plain 触发 CORS simple request，不需要预检也
+  读不到响应，但**写入已经生效**，而模板内容会原样渲染进注入给模型的上下文。
+
+- **写操作强制 JSON content-type**：`PUT` 现在要求 `application/json`，否则 415。
+  这条挡掉 text/plain 的跨源 simple request，也让浏览器的跨源写请求先走 CORS 预检。
+
+- **`readBody` 加大小上限**：原先无限 `data += chunk`，本机任意进程 POST 一个 GB 级
+  body 就能把宿主进程内存打爆。现在 64 KiB 封顶，超限即 `req.destroy()` 并回空串。
+
+- **配置存储加缓存 + 原子写（`lib/store.js`）**：`loadConfig()` 原先每次调用都同步
+  读盘，而 `renderNotice` 每条提醒读一次、命令每次读一次——注入路径上白付磁盘 I/O。
+  现在进程内缓存，`saveConfig` 时同步更新。写入改为「临时文件 + rename」，避免
+  `writeFileSync` 直写时崩溃/断电留下被截断的半个 JSON；读取失败不再静默退回默认值，
+  而是记一条 error（配置坏掉时用户有权知道为什么设置回到默认）。
+
+- **客户端关键帧改为 React 元素（`lib/client.js`）**：`ensureKeyframes()` 原先在渲染体里
+  `document.head.appendChild(<style>)`，且全文件没有移除路径。规范要求「不要在你的
+  组件之外写 DOM」（head 与 body 同属组件外），组件内样式应「渲染成 React 元素，
+  卸载即移除」。现在关键帧作为 `<style>` 元素渲染进组件树，卸载自动清理，
+  也不再需要 id 去重。
+
+### 新增
+
+- `locale/en.json` 与 `locale/zh.json`：插件管理页显示「Time watchdog / 计时看门狗」
+  和真实的能力描述，而不是退回包名。`package.json` 补 `./locale/*.json` 导出。
+  图标使用面板默认图形。
+
+### 测试
+
+- 新增 3 条回归用例（`tests/host.test.mjs`）：`wire.summary` 必须为 `false`；
+  `session/disposed` 后计划被清、resume 同一 id 不复活；无 session id 时拒绝设定。
+- 测试桩升级为真实形状：`sessionProjections.register` 改为返回 `Promise<handle>`、
+  新增 `ctx.effect` 桩，`apply` 调用全部改 `await`——正是这组改动抓出了「投影注册
+  未 await」与「漏改一处 `stateOf`」两个缺陷。
+- 全量 `node --test "tests/*.test.mjs"`：**92 passed / 0 failed**（原 78 + 新增 3，
+  其余为宿主集成用例在可解析宿主包的环境下补跑）。
+
+### 说明
+
+- 本轮**未**改动任何对外行为：`/clock`、`/set-time`、`clock_elapsed` 工具名与语义、
+  配置文件路径与格式全部保持原样。
+- `apply` 现在是 async 函数（返回值是 Promise）。Cordis 支持这种写法，代价是宿主会等
+  投影注册完成才认为插件就绪——这正是官方文档要求的顺序。
+
 ## 1.0.0 — 2026-10-26
 
 **首次开源发布**，同时**从 `dsh-clock` 改名为 `dsh-time-watchdog`**。
